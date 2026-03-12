@@ -22,12 +22,13 @@ from config.settings import (
 IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-HEADERS = {
+BASE_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/122.0.0.0 Safari/537.36"
-    )
+    ),
+    "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
 }
 
 
@@ -41,13 +42,16 @@ def _ext_from_url(url: str) -> str:
     return suffix if suffix in {".jpg", ".jpeg", ".png", ".webp"} else ".jpg"
 
 
-def download_and_process_image(url: str) -> Optional[str]:
+def download_and_process_image(url: str, referer: Optional[str] = None) -> Optional[str]:
     """
     Download one image, resize/optimise it, save to PROCESSED_DIR.
     Returns the local file path (relative to project root) or None on failure.
     """
     try:
-        resp = httpx.get(url, headers=HEADERS, timeout=15, follow_redirects=True)
+        headers = dict(BASE_HEADERS)
+        if referer:
+            headers["Referer"] = referer
+        resp = httpx.get(url, headers=headers, timeout=20, follow_redirects=True)
         resp.raise_for_status()
         raw = resp.content
     except Exception as e:
@@ -76,11 +80,11 @@ def download_and_process_image(url: str) -> Optional[str]:
         return None
 
 
-def process_images(urls: list[str], max_images: int = 12) -> list[str]:
+def process_images(urls: list[str], max_images: int = 12, referer: Optional[str] = None) -> list[str]:
     """Process a list of image URLs; return list of local paths."""
     local = []
     for url in urls[:max_images]:
-        path = download_and_process_image(url)
+        path = download_and_process_image(url, referer=referer)
         if path:
             local.append(path)
     return local

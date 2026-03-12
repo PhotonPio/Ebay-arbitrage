@@ -8,6 +8,7 @@ import re
 from typing import Optional
 from urllib.parse import urlparse
 
+import httpx
 from bs4 import BeautifulSoup
 
 
@@ -70,6 +71,137 @@ def _extract_shipping_days(text: str) -> Optional[int]:
 def _abs_url(src: str, base: str) -> str:
     from urllib.parse import urljoin
     return urljoin(base, src)
+
+def _parse_srcset(srcset: str) -> list[str]:
+    if not srcset:
+        return []
+    urls = []
+    for part in srcset.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        url = part.split()[0]
+        if url:
+            urls.append(url)
+    return urls
+
+def _collect_meta_images(soup: BeautifulSoup) -> list[str]:
+    urls: list[str] = []
+    for sel in [
+        'meta[property="og:image"]',
+        'meta[name="og:image"]',
+        'meta[property="twitter:image"]',
+        'meta[name="twitter:image"]',
+    ]:
+        for tag in soup.select(sel):
+            src = tag.get("content", "")
+            if src:
+                urls.append(src)
+    for tag in soup.select('link[rel="preload"][as="image"]'):
+        src = tag.get("href", "")
+        if src:
+            urls.append(src)
+    return urls
+
+def _title_from_url(url: str) -> str:
+    path = urlparse(url).path.strip("/")
+    if not path:
+        return "Product"
+    slug = path.split("/")[-1]
+    slug = re.sub(r"\.html?$", "", slug, flags=re.I)
+    slug = re.sub(r"[-_]+", " ", slug)
+    slug = re.sub(r"\s+", " ", slug).strip()
+    return slug[:120] or "Product"
+
+def _brand_from_domain(url: str) -> str:
+    host = urlparse(url).netloc.lower()
+    host = host.split(":")[0]
+    parts = [p for p in host.split(".") if p and p not in {"www", "com", "net", "org", "co"}]
+    if not parts:
+        return ""
+    return parts[-1].capitalize()
+
+def _looks_blocked(html: str) -> bool:
+    if not html:
+        return True
+    lowered = html.lower()
+    markers = [
+        "access denied",
+        "request blocked",
+        "unusual traffic",
+        "bot detection",
+        "captcha",
+        "please verify",
+        "security check",
+    ]
+    return any(m in lowered for m in markers)
+
+def _parse_json_ld(soup: BeautifulSoup, url: str) -> Optional[ScrapedProduct]:
+    """Extract product data from JSON-LD blocks if present."""
+    blocks = soup.find_all("script", type="application/ld+json")
+    if not blocks:
+        return None
+
+    def _iter_items(obj):
+        if isinstance(obj, list):
+            for item in obj:
+                yield from _iter_items(item)
+        elif isinstance(obj, dict):
+            yield obj
+            for v in obj.values():
+                yield from _iter_items(v)
+
+    product_node = None
+    for block in blocks:
+        try:
+            data = json.loads(block.string or block.get_text() or "{}")
+        except Exception:
+            continue
+        for item in _iter_items(data):
+            if isinstance(item, dict) and str(item.get("@type", "")).lower() == "product":
+                product_node = item
+                break
+        if product_node:
+            break
+
+    if not product_node:
+        return None
+
+    product = ScrapedProduct()
+    product.url = url
+
+    title = product_node.get("name") or ""
+    if title:
+        product.title = str(title)[:300]
+
+    brand = product_node.get("brand")
+    if isinstance(brand, dict):
+        product.brand = str(brand.get("name", ""))[:100]
+    elif isinstance(brand, str):
+        product.brand = brand[:100]
+
+    description = product_node.get("description") or ""
+    if description:
+        product.description = str(description)[:2000]
+
+    image = product_node.get("image") or []
+    if isinstance(image, str):
+        product.images = [image]
+    elif isinstance(image, list):
+        product.images = [str(i) for i in image if i][:12]
+
+    offers = product_node.get("offers")
+    if isinstance(offers, dict):
+        raw_price = offers.get("price") or offers.get("priceSpecification", {}).get("price")
+        product.price = _extract_price(str(raw_price)) if raw_price is not None else None
+    elif isinstance(offers, list):
+        for offer in offers:
+            if isinstance(offer, dict) and offer.get("price"):
+                product.price = _extract_price(str(offer.get("price")))
+                if product.price:
+                    break
+
+    return product
 
 
 # ── Generic parser (works on most eCommerce sites) ──────────────────────────
@@ -151,19 +283,42 @@ def _parse_html(html: str, url: str) -> ScrapedProduct:
     for sel in [
         'img[itemprop="image"]', '.product-image img',
         '.pdp-image img', 'img[class*="product"]',
-        'img[class*="gallery"]', 'img[src]',
+        'img[class*="gallery"]', 'img[src]', 'source[srcset]'
     ]:
         for img in soup.select(sel):
-            src = (img.get("data-src") or img.get("data-zoom-image")
-                   or img.get("data-original") or img.get("src") or "")
-            if src and src not in seen and not src.startswith("data:"):
+            candidates = []
+            candidates += _parse_srcset(img.get("data-srcset", ""))
+            candidates += _parse_srcset(img.get("srcset", ""))
+            candidates += [
+                img.get("data-src"),
+                img.get("data-zoom-image"),
+                img.get("data-original"),
+                img.get("data-lazy"),
+                img.get("data-image"),
+                img.get("src"),
+            ]
+            for src in [c for c in candidates if c]:
+                if src.startswith("data:"):
+                    continue
                 abs_src = _abs_url(src, url)
-                seen.add(abs_src)
-                product.images.append(abs_src)
+                if abs_src not in seen:
+                    seen.add(abs_src)
+                    product.images.append(abs_src)
+                if len(product.images) >= 12:
+                    break
             if len(product.images) >= 12:
                 break
         if len(product.images) >= 12:
             break
+
+    if not product.images:
+        for src in _collect_meta_images(soup):
+            abs_src = _abs_url(src, url)
+            if abs_src not in seen:
+                seen.add(abs_src)
+                product.images.append(abs_src)
+            if len(product.images) >= 12:
+                break
 
     # ── Shipping ─────────────────────────────────────────────────────────────
     for sel in [".shipping", ".delivery", "[class*='ship']", "[class*='deliver']"]:
@@ -235,52 +390,129 @@ async def scrape_product(url: str) -> ScrapedProduct:
     except ImportError:
         raise RuntimeError("Playwright not installed. Run: playwright install chromium")
 
+    async def _fetch_html(target_url: str, user_agent: str, extra_headers: dict[str, str]) -> str:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
+                ],
+            )
+            context = await browser.new_context(
+                user_agent=user_agent,
+                viewport={"width": 1280, "height": 900},
+                locale="en-US",
+                timezone_id="America/Los_Angeles",
+                extra_http_headers=extra_headers,
+            )
+            await context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+            )
+            page = await context.new_page()
+
+            # Block trackers/ads to speed up scraping
+            await page.route(
+                "**/{analytics,tracking,ads,beacon}**",
+                lambda route: route.abort()
+            )
+
+            try:
+                for wait_until in ("domcontentloaded", "load", "networkidle"):
+                    try:
+                        await page.goto(target_url, wait_until=wait_until, timeout=45_000)
+                        break
+                    except Exception:
+                        pass
+                await asyncio.sleep(2)
+                await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+                await asyncio.sleep(1)
+                return await page.content()
+            finally:
+                await browser.close()
+
+    async def _fetch_html_httpx(target_url: str, extra_headers: dict[str, str]) -> str:
+        headers = {
+            "User-Agent": extra_headers.get("user-agent", ""),
+            "Accept": extra_headers.get("accept", "*/*"),
+            "Accept-Language": extra_headers.get("accept-language", "en-US,en;q=0.9"),
+            "Referer": extra_headers.get("referer", ""),
+        }
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+            resp = await client.get(target_url, headers=headers)
+            if resp.status_code >= 400:
+                return ""
+            return resp.text or ""
+
     html = ""
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-        )
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 900},
-        )
-        page = await context.new_page()
+    ua_windows = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    )
+    ua_mac = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    )
 
-        # Block trackers/ads to speed up scraping
-        await page.route(
-            "**/{analytics,tracking,ads,beacon}**",
-            lambda route: route.abort()
-        )
+    headers = {
+        "accept-language": "en-US,en;q=0.9",
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "upgrade-insecure-requests": "1",
+        "user-agent": ua_windows,
+    }
 
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-            # Wait a moment for JS to hydrate
-            await asyncio.sleep(2)
-            # Scroll to load lazy images
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-            await asyncio.sleep(1)
-            html = await page.content()
-        except Exception as e:
-            print(f"⚠ Playwright navigation error: {e}")
-        finally:
-            await browser.close()
+    try:
+        html = await _fetch_html(url, ua_windows, headers)
+        if _looks_blocked(html):
+            headers["user-agent"] = ua_mac
+            html = await _fetch_html(url, ua_mac, headers)
+        if _looks_blocked(html):
+            # Fallback to a simple HTTP fetch (some sites block Playwright but allow HTML)
+            html = await _fetch_html_httpx(url, headers)
+    except Exception as e:
+        print(f"⚠ Playwright navigation error: {e}")
 
     if not html:
-        raise ValueError(f"Could not load page: {url}")
+        # Return a minimal product so the app can continue gracefully.
+        product = ScrapedProduct()
+        product.url = url
+        product.title = _title_from_url(url)
+        product.brand = _brand_from_domain(url)
+        product.specs = {"Scrape Error": "Could not load page"}
+        return product
 
     soup = BeautifulSoup(html, "html.parser")
     domain = urlparse(url).netloc.lower()
 
+    # Try structured data first (most reliable for modern sites)
+    product = _parse_json_ld(soup, url) or ScrapedProduct()
+    product.url = url
+
     # Dispatch to site-specific parsers
     if "amazon" in domain:
-        product = _parse_amazon(soup, url)
+        parsed = _parse_amazon(soup, url)
     else:
-        product = _parse_html(html, url)
+        parsed = _parse_html(html, url)
+
+    # Merge parsed fields where JSON-LD is missing
+    if not product.title:
+        product.title = parsed.title
+    if not product.brand:
+        product.brand = parsed.brand
+    if not product.description:
+        product.description = parsed.description
+    if not product.price:
+        product.price = parsed.price
+    if not product.specs:
+        product.specs = parsed.specs
+    if not product.images:
+        product.images = parsed.images
+    if not product.shipping_days:
+        product.shipping_days = parsed.shipping_days
 
     # Fallback title from og:title if empty
     if not product.title:
@@ -290,10 +522,16 @@ async def scrape_product(url: str) -> ScrapedProduct:
 
     # Fallback images from og:image
     if not product.images:
-        for tag in soup.select('meta[property="og:image"]'):
-            src = tag.get("content", "")
-            if src:
-                product.images.append(src)
+        for src in _collect_meta_images(soup):
+            product.images.append(src)
+
+    if _looks_blocked(html) and not (product.title or product.price or product.images):
+        product.specs = product.specs or {}
+        product.specs["Scrape Error"] = "Access denied by site"
+        if not product.title:
+            product.title = _title_from_url(url)
+        if not product.brand:
+            product.brand = _brand_from_domain(url)
 
     return product
 

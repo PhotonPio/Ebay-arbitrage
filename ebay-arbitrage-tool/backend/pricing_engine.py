@@ -1,7 +1,9 @@
 """
 Pricing Engine
 Calculates listing price and checks against eBay market averages.
+In DEMO_MODE, returns realistic mock market prices without any API calls.
 """
+import random
 import sys
 from pathlib import Path
 from typing import Optional
@@ -12,7 +14,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config.settings import (
     DEFAULT_MARKUP, MARKET_PRICE_THRESHOLD,
     EBAY_API_BASE, EBAY_CLIENT_ID, EBAY_CLIENT_SECRET,
+    DEMO_MODE,
 )
+
+
+# ── Demo mock market prices ───────────────────────────────────────────────────
+
+def _mock_market_price(retail_price: float) -> float:
+    """
+    Simulate a realistic eBay market price.
+    Real eBay prices cluster between 0.6x–1.3x retail depending on category.
+    """
+    # Seed randomness from price so same product always returns same mock value
+    rng = random.Random(int(retail_price * 100))
+    multiplier = rng.uniform(0.65, 1.25)
+    return round(retail_price * multiplier, 2)
 
 
 # ── eBay Browse API token (client credentials) ───────────────────────────────
@@ -36,7 +52,10 @@ def _get_app_token() -> str:
                 "Authorization": f"Basic {creds}",
                 "Content-Type": "application/x-www-form-urlencoded",
             },
-            data={"grant_type": "client_credentials", "scope": "https://api.ebay.com/oauth/api_scope"},
+            data={
+                "grant_type": "client_credentials",
+                "scope": "https://api.ebay.com/oauth/api_scope",
+            },
             timeout=10,
         )
         data = resp.json()
@@ -50,11 +69,16 @@ def _get_app_token() -> str:
 
 # ── Market price lookup ───────────────────────────────────────────────────────
 
-def fetch_market_avg_price(query: str) -> Optional[float]:
+def fetch_market_avg_price(query: str, retail_price: float = 0.0) -> Optional[float]:
     """
-    Use eBay Browse API to find average sold/listed price for a search term.
-    Returns None if credentials are missing or API fails.
+    Fetch average eBay market price for a search term.
+    Returns mock data in DEMO_MODE; calls live API otherwise.
     """
+    if DEMO_MODE:
+        if retail_price > 0:
+            return _mock_market_price(retail_price)
+        return None
+
     token = _get_app_token()
     if not token or not query:
         return None
@@ -98,15 +122,13 @@ def calculate_price(
     markup: float = DEFAULT_MARKUP,
 ) -> dict:
     """
-    Returns a pricing result dict:
-    {
-        listing_price, market_avg, warning, suggested_price, margin_pct
-    }
+    Returns a full pricing breakdown dict.
+    Works in both demo and live mode.
     """
     listing_price = round(retail_price * (1 + markup), 2)
 
-    # Check market
-    market_avg = fetch_market_avg_price(title)
+    # Fetch (or mock) market average
+    market_avg = fetch_market_avg_price(title, retail_price)
 
     warning = False
     suggested_price = listing_price
@@ -115,7 +137,6 @@ def calculate_price(
         overage = (listing_price - market_avg) / market_avg
         if overage > MARKET_PRICE_THRESHOLD:
             warning = True
-            # Suggest just under the market avg to stay competitive
             suggested_price = round(market_avg * 0.97, 2)
 
     margin_pct = round(((listing_price - retail_price) / listing_price) * 100, 1)
@@ -127,4 +148,5 @@ def calculate_price(
         "suggested_price": suggested_price,
         "markup_pct": round(markup * 100, 1),
         "margin_pct": margin_pct,
+        "demo_mode": DEMO_MODE,
     }
