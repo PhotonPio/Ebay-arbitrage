@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — ListingForge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#08090C; --surface:#0F1117; --surface2:#161820; --border:#1E2028; --border2:#2A2D38;
+    --gold:#E8A930; --gold-dim:#A3751F; --gold-glow:#E8A93022;
+    --blue:#3B82F6; --green:#22C55E; --red:#EF4444; --orange:#F97316;
+    --text:#E2E4EA; --muted:#6B7080; --muted2:#454859;
+    --mono:'JetBrains Mono',monospace; --sans:'Inter',sans-serif; --display:'Syne',sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh;}
+  body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+    background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);
+    background-size:40px 40px;opacity:0.3;}
+
+  nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;
+    padding:0 32px;height:60px;background:rgba(8,9,12,0.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);}
+  .logo{display:flex;align-items:center;gap:10px;font-family:var(--display);font-size:18px;font-weight:800;letter-spacing:-0.02em;color:var(--text);text-decoration:none;}
+  .logo-mark{width:28px;height:28px;border-radius:6px;background:linear-gradient(135deg,var(--gold),#F5C842);display:flex;align-items:center;justify-content:center;font-size:14px;}
+  .logo span{color:var(--gold);}
+  .nav-link{padding:6px 14px;border-radius:6px;font-size:13px;color:var(--muted);text-decoration:none;transition:all 0.2s;font-weight:500;}
+  .nav-link:hover,.nav-link.active{color:var(--text);background:var(--surface);}
+
+  .container{max-width:1200px;margin:0 auto;padding:0 24px;position:relative;z-index:1;}
+
+  .page-header{padding:32px 0 24px;display:flex;align-items:flex-end;justify-content:space-between;}
+  .page-title{font-family:var(--display);font-size:32px;font-weight:800;letter-spacing:-0.03em;}
+  .page-sub{color:var(--muted);font-size:13px;margin-top:4px;}
+
+  /* KPI grid */
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;}
+  .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
+  .kpi-label{font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;}
+  .kpi-value{font-family:var(--display);font-size:36px;font-weight:800;letter-spacing:-0.03em;line-height:1;}
+  .kpi-sub{font-size:12px;color:var(--muted);margin-top:6px;}
+  .kpi-trend{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-family:var(--mono);padding:2px 6px;border-radius:4px;margin-top:8px;}
+  .trend-up{background:#22C55E15;color:var(--green);}
+  .trend-down{background:#EF444415;color:var(--red);}
+  .trend-neutral{background:#3B82F615;color:var(--blue);}
+
+  /* Listings table */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  .card-header{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+  .card-title{font-family:var(--display);font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;}
+
+  .listings-table{width:100%;border-collapse:collapse;}
+  .listings-table th{text-align:left;padding:10px 16px;font-size:11px;color:var(--muted);font-family:var(--mono);font-weight:400;border-bottom:1px solid var(--border);letter-spacing:0.05em;text-transform:uppercase;}
+  .listings-table td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle;}
+  .listings-table tr:last-child td{border-bottom:none;}
+  .listings-table tbody tr:hover td{background:var(--surface2);}
+  .listings-table tbody tr{cursor:pointer;}
+
+  .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-family:var(--mono);font-weight:500;}
+  .badge-ready{background:#22C55E18;color:var(--green);border:1px solid #22C55E30;}
+  .badge-draft{background:#3B82F618;color:var(--blue);border:1px solid #3B82F630;}
+  .badge-warn{background:#F9731618;color:var(--orange);border:1px solid #F9731630;}
+  .badge-error{background:#EF444418;color:var(--red);border:1px solid #EF444430;}
+  .badge-published{background:#22C55E18;color:var(--green);border:1px solid #22C55E30;}
+
+  .score-pill{display:inline-flex;align-items:center;justify-content:center;width:36px;height:22px;border-radius:4px;font-size:11px;font-family:var(--mono);font-weight:600;}
+  .score-high{background:#22C55E18;color:var(--green);}
+  .score-mid{background:#E8A93018;color:var(--gold);}
+  .score-low{background:#EF444418;color:var(--red);}
+
+  .img-mini{width:36px;height:36px;border-radius:5px;object-fit:cover;border:1px solid var(--border2);}
+  .img-mini-placeholder{width:36px;height:36px;border-radius:5px;border:1px dashed var(--border2);background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:14px;}
+
+  .filter-row{display:flex;gap:8px;align-items:center;}
+  .filter-btn{padding:5px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s;
+    border:1px solid var(--border2);background:transparent;color:var(--muted);font-family:var(--mono);}
+  .filter-btn.active,.filter-btn:hover{background:var(--surface2);color:var(--text);border-color:var(--border2);}
+
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;border:none;font-family:var(--sans);}
+  .btn-gold{background:var(--gold);color:#0A0A0B;}
+  .btn-gold:hover{background:#F5C842;}
+  .btn-outline{background:transparent;color:var(--text);border:1px solid var(--border2);}
+  .btn-outline:hover{border-color:var(--gold-dim);color:var(--gold);}
+  .btn-danger{background:transparent;color:var(--red);border:1px solid #EF444430;font-size:12px;padding:5px 10px;}
+  .btn-danger:hover{background:#EF444410;}
+
+  .empty-state{text-align:center;padding:60px 20px;color:var(--muted);}
+  .empty-icon{font-size:48px;margin-bottom:12px;}
+  .empty-title{font-family:var(--display);font-size:20px;font-weight:700;color:var(--text);margin-bottom:8px;}
+
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .spinner{width:20px;height:20px;border:2px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin 0.7s linear infinite;}
+
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+  .fade-up{animation:fadeUp 0.3s ease forwards;}
+
+  #toast-container{position:fixed;bottom:24px;right:24px;z-index:1000;display:flex;flex-direction:column;gap:8px;}
+  .toast{padding:12px 16px;border-radius:8px;font-size:13px;border:1px solid;backdrop-filter:blur(20px);animation:fadeUp 0.3s ease;}
+  .toast-ok{background:#22C55E18;border-color:#22C55E40;color:var(--green);}
+  .toast-err{background:#EF444418;border-color:#EF444440;color:var(--red);}
+  .toast-info{background:#3B82F618;border-color:#3B82F640;color:#93C5FD;}
+
+  ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+  @media(max-width:900px){.kpi-grid{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:600px){.kpi-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo"><div class="logo-mark">⚡</div>Listing<span>Forge</span></a>
+  <div style="display:flex;gap:8px;">
+    <a href="/" class="nav-link">Generate</a>
+    <a href="/dashboard" class="nav-link active">Dashboard</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Dashboard</div>
+      <div class="page-sub" id="lastRefresh">Refreshing...</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-outline" onclick="loadDashboard()">↻ Refresh</button>
+      <a href="/" class="btn btn-gold">⚡ New Listing</a>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid" id="kpiGrid">
+    <div class="kpi-card"><div class="kpi-label">Total Listings</div><div class="kpi-value" id="kTotal">—</div><div class="kpi-sub">All time</div></div>
+    <div class="kpi-card"><div class="kpi-label">Published</div><div class="kpi-value text-green" id="kPublished" style="color:var(--green);">—</div><div class="kpi-sub">Live on eBay</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Profit</div><div class="kpi-value text-gold" id="kProfit" style="color:var(--gold);">—</div><div class="kpi-sub">Published listings</div></div>
+    <div class="kpi-card"><div class="kpi-label">Avg Margin</div><div class="kpi-value" id="kMargin">—</div><div class="kpi-sub">Across all listings</div></div>
+  </div>
+
+  <!-- All Listings -->
+  <div class="card" style="margin-bottom:40px;">
+    <div class="card-header">
+      <div class="card-title">📋 All Listings</div>
+      <div class="filter-row">
+        <button class="filter-btn active" onclick="filterListings('all', this)">All</button>
+        <button class="filter-btn" onclick="filterListings('ready', this)">Ready</button>
+        <button class="filter-btn" onclick="filterListings('published', this)">Published</button>
+        <button class="filter-btn" onclick="filterListings('draft', this)">Draft</button>
+      </div>
+    </div>
+    <div id="tableWrapper">
+      <div style="text-align:center;padding:40px;"><div class="spinner" style="margin:0 auto;"></div></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+  let allListings = [];
+  let activeFilter = 'all';
+
+  window.addEventListener('load', loadDashboard);
+
+  async function loadDashboard() {
+    document.getElementById('lastRefresh').textContent =
+      `Last refreshed: ${new Date().toLocaleTimeString()}`;
+    await Promise.all([loadStats(), loadListings()]);
+  }
+
+  async function loadStats() {
+    try {
+      const r = await fetch('/api/dashboard');
+      const d = await r.json();
+      document.getElementById('kTotal').textContent = d.total_listings;
+      document.getElementById('kPublished').textContent = d.published_listings;
+      document.getElementById('kProfit').textContent = `$${d.total_estimated_profit.toFixed(2)}`;
+      document.getElementById('kMargin').textContent = `${d.avg_profit_margin.toFixed(1)}%`;
+    } catch(e) {
+      console.error('Stats error', e);
+    }
+  }
+
+  async function loadListings() {
+    try {
+      const r = await fetch('/api/listings');
+      allListings = await r.json();
+      renderTable(allListings);
+    } catch(e) {
+      document.getElementById('tableWrapper').innerHTML =
+        `<div class="empty-state"><div class="empty-icon">⚠</div><div style="color:var(--red);">Failed to load listings</div></div>`;
+    }
+  }
+
+  function filterListings(filter, btn) {
+    activeFilter = filter;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filtered = filter === 'all' ? allListings :
+      allListings.filter(l => {
+        if (filter === 'ready') return ['ready', 'scraped'].includes(l.status);
+        if (filter === 'draft') return ['draft', 'scraped'].includes(l.status);
+        return l.status === filter;
+      });
+    renderTable(filtered);
+  }
+
+  function renderTable(listings) {
+    const wrapper = document.getElementById('tableWrapper');
+    if (listings.length === 0) {
+      wrapper.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📦</div>
+          <div class="empty-title">No listings yet</div>
+          <div style="margin-bottom:20px;">Generate your first eBay listing from a retail product URL.</div>
+          <a href="/" class="btn btn-gold" style="text-decoration:none;">⚡ Generate First Listing</a>
+        </div>`;
+      return;
+    }
+
+    wrapper.innerHTML = `
+      <div style="overflow-x:auto;">
+        <table class="listings-table">
+          <thead>
+            <tr>
+              <th>Image</th>
+              <th>Title</th>
+              <th>Retail</th>
+              <th>eBay Price</th>
+              <th>Profit</th>
+              <th>Score</th>
+              <th>Status</th>
+              <th>Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>`;
+
+    const tbody = document.getElementById('tableBody');
+    listings.forEach(l => {
+      const statusBadge = {
+        published: '<span class="badge badge-published">✓ published</span>',
+        ready: '<span class="badge badge-ready">● ready</span>',
+        scraped: '<span class="badge badge-draft">↓ scraped</span>',
+        draft: '<span class="badge badge-draft">· draft</span>',
+        failed: '<span class="badge badge-error">✗ failed</span>',
+      }[l.status] || `<span class="badge badge-draft">${l.status}</span>`;
+
+      const score = l.quality_score != null ? l.quality_score : '—';
+      const scoreClass = l.quality_score >= 80 ? 'score-high' : l.quality_score >= 60 ? 'score-mid' : 'score-low';
+
+      const imgSrc = l.processed_images?.[0];
+      const imgEl = imgSrc
+        ? `<img class="img-mini" src="${imgSrc}" alt="" onerror="this.parentElement.innerHTML='<div class=img-mini-placeholder>🖼</div>'">`
+        : '<div class="img-mini-placeholder">🖼</div>';
+
+      const date = l.created_at
+        ? new Date(l.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric'})
+        : '—';
+
+      const title = (l.ebay_title || l.raw_title || 'Untitled').slice(0, 45);
+      const retail = l.raw_price ? `$${l.raw_price.toFixed(2)}` : '—';
+      const ebayPrice = l.ebay_price ? `$${l.ebay_price.toFixed(2)}` : '—';
+      const profit = l.profit_amount != null ? `<span style="color:${l.profit_amount >= 0 ? 'var(--green)' : 'var(--red)'};">$${l.profit_amount.toFixed(2)}</span>` : '—';
+
+      const row = document.createElement('tr');
+      row.onclick = () => window.location.href = `/preview/${l.id}`;
+      row.innerHTML = `
+        <td>${imgEl}</td>
+        <td style="max-width:220px;">
+          <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</div>
+          <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px;">${l.source_site || '—'}</div>
+        </td>
+        <td style="font-family:var(--mono);color:var(--muted);">${retail}</td>
+        <td style="font-family:var(--mono);color:var(--gold);">${ebayPrice}</td>
+        <td style="font-family:var(--mono);">${profit}</td>
+        <td><span class="score-pill ${scoreClass}">${score}</span></td>
+        <td>${statusBadge}</td>
+        <td style="font-size:12px;color:var(--muted);font-family:var(--mono);">${date}</td>
+        <td onclick="event.stopPropagation();">
+          <div style="display:flex;gap:6px;">
+            <a href="/preview/${l.id}" style="font-size:12px;color:var(--blue);text-decoration:none;white-space:nowrap;">Edit →</a>
+            <button class="btn btn-danger" onclick="deleteListing(${l.id})">Del</button>
+          </div>
+        </td>`;
+      tbody.appendChild(row);
+    });
+  }
+
+  async function deleteListing(id) {
+    if (!confirm(`Delete listing #${id}?`)) return;
+    try {
+      const r = await fetch(`/api/listing/${id}`, {method: 'DELETE'});
+      if (r.ok) {
+        toast('Listing deleted', 'ok');
+        await loadListings();
+        await loadStats();
+      } else {
+        toast('Delete failed', 'err');
+      }
+    } catch(e) {
+      toast('Error: ' + e.message, 'err');
+    }
+  }
+
+  function toast(msg, type='info') {
+    const c = document.getElementById('toast-container');
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.textContent = msg;
+    c.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+</script>
+</body>
+</html>
