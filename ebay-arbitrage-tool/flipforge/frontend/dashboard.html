@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Dashboard — FlipForge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#08090d;--surface:#0f1117;--surface2:#161922;--border:#1e2230;--amber:#f5a623;--amber-dim:#c4841a;--green:#2dd4a0;--red:#f04e4e;--blue:#4e8af0;--text:#e8eaf0;--muted:#5a6070;--mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;--display:'Bebas Neue',cursive}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh}
+body::before{content:'';position:fixed;inset:0;z-index:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:48px 48px;opacity:.35;pointer-events:none}
+header{position:relative;z-index:10;border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:60px;background:rgba(8,9,13,.95);backdrop-filter:blur(8px)}
+.logo{font-family:var(--display);font-size:1.5rem;letter-spacing:2px;color:var(--amber)}
+.logo span{color:var(--text)}
+nav a{font-family:var(--mono);font-size:.75rem;padding:.4rem .9rem;border-radius:4px;color:var(--muted);text-decoration:none;letter-spacing:.05em;text-transform:uppercase;transition:color .15s}
+nav a:hover,nav a.active{color:var(--amber)}
+main{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:2rem}
+
+/* Stat cards */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:2rem}
+@media(max-width:720px){.stat-grid{grid-template-columns:1fr 1fr}}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1.25rem;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--amber);opacity:.6}
+.stat-label{font-family:var(--mono);font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem}
+.stat-value{font-family:var(--display);font-size:2.5rem;letter-spacing:2px;color:var(--amber);line-height:1}
+.stat-sub{font-family:var(--mono);font-size:.65rem;color:var(--muted);margin-top:.35rem}
+
+/* Page header */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem}
+.page-title{font-family:var(--display);font-size:2rem;letter-spacing:2px}
+
+/* Filter bar */
+.filter-bar{display:flex;gap:.5rem;margin-bottom:1.25rem;flex-wrap:wrap}
+.filter-btn{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;padding:.35rem .85rem;border-radius:4px;border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;transition:all .15s}
+.filter-btn.active,.filter-btn:hover{color:var(--amber);border-color:var(--amber)}
+
+/* Table */
+.table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+thead th{background:var(--surface2);font-family:var(--mono);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding:.75rem 1rem;text-align:left;border-bottom:1px solid var(--border)}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+tbody tr:hover{background:var(--surface2)}
+tbody td{padding:.8rem 1rem;font-size:.85rem;vertical-align:middle}
+.td-mono{font-family:var(--mono);font-size:.75rem}
+.td-muted{color:var(--muted)}
+.td-amber{color:var(--amber);font-family:var(--mono);font-weight:600}
+
+/* Badge */
+.badge{font-family:var(--mono);font-size:.58rem;padding:.2rem .55rem;border-radius:2px;letter-spacing:.08em}
+.badge-published{background:rgba(45,212,160,.1);color:var(--green)}
+.badge-draft{background:rgba(90,96,112,.1);color:var(--muted)}
+.badge-warn{background:rgba(245,166,35,.1);color:var(--amber)}
+
+/* Score mini */
+.score-mini{font-family:var(--mono);font-size:.75rem;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid var(--border);color:var(--amber)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.5rem 1rem;border-radius:6px;font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;border:none;transition:all .15s;text-decoration:none}
+.btn-primary{background:var(--amber);color:#08090d;font-weight:600}
+.btn-primary:hover{background:var(--amber-dim)}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--muted)}
+.btn-outline:hover{border-color:var(--amber);color:var(--amber)}
+.btn-sm{padding:.3rem .75rem;font-size:.65rem}
+.btn-danger{background:none;border:1px solid rgba(240,78,78,.3);color:var(--red)}
+.btn-danger:hover{background:rgba(240,78,78,.1)}
+
+/* Empty */
+.empty{text-align:center;padding:4rem 2rem;color:var(--muted);font-family:var(--mono);font-size:.8rem}
+
+/* Pagination */
+.pagination{display:flex;gap:.4rem;align-items:center;justify-content:center;margin-top:1.25rem;font-family:var(--mono);font-size:.72rem}
+.page-num{padding:.3rem .65rem;border-radius:4px;cursor:pointer;color:var(--muted);border:1px solid transparent}
+.page-num:hover{border-color:var(--amber);color:var(--amber)}
+.page-num.active{background:var(--amber);color:#08090d}
+
+/* Profit chart placeholder */
+.chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1.5rem;margin-bottom:1.5rem}
+.chart-title{font-family:var(--mono);font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);margin-bottom:1rem}
+.mini-chart{display:flex;align-items:flex-end;gap:4px;height:60px}
+.mini-bar{flex:1;background:var(--amber);opacity:.6;border-radius:2px 2px 0 0;min-height:4px;transition:opacity .2s}
+.mini-bar:hover{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">FLIP<span>FORGE</span></div>
+  <nav>
+    <a href="/">GENERATE</a>
+    <a href="/dashboard" class="active">DASHBOARD</a>
+  </nav>
+  <a href="/" class="btn btn-primary btn-sm">+ New Listing</a>
+</header>
+
+<main>
+  <!-- Stats -->
+  <div class="stat-grid" id="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Generated</div>
+      <div class="stat-value" id="stat-generated">—</div>
+      <div class="stat-sub">all time</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Published</div>
+      <div class="stat-value" id="stat-published">—</div>
+      <div class="stat-sub">live on eBay</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Est. Profit</div>
+      <div class="stat-value" id="stat-profit">—</div>
+      <div class="stat-sub">published listings</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Margin</div>
+      <div class="stat-value" id="stat-margin">—</div>
+      <div class="stat-sub">across portfolio</div>
+    </div>
+  </div>
+
+  <!-- Mini bar chart -->
+  <div class="chart-wrap">
+    <div class="chart-title">Listing Generation Activity</div>
+    <div class="mini-chart" id="mini-chart"></div>
+  </div>
+
+  <!-- Listings table -->
+  <div class="page-header">
+    <div class="page-title">All Listings</div>
+    <div style="display:flex;gap:.5rem">
+      <input type="text" id="search-input" placeholder="Search titles…" oninput="filterTable()"
+        style="background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:.75rem;padding:.4rem .75rem;outline:none;width:200px">
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
+    <button class="filter-btn" onclick="setFilter('draft', this)">Drafts</button>
+    <button class="filter-btn" onclick="setFilter('published', this)">Published</button>
+    <button class="filter-btn" onclick="setFilter('warn', this)">⚠ Price Warning</button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Title</th>
+          <th>Retail</th>
+          <th>Listing Price</th>
+          <th>Market Avg</th>
+          <th>Score</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="listings-tbody">
+        <tr><td colspan="9" class="empty">Loading listings…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pagination" id="pagination"></div>
+</main>
+
+<script>
+let allListings = [];
+let filterStatus = 'all';
+let searchTerm = '';
+const PAGE_SIZE = 20;
+let currentPage = 1;
+
+// ── Init ──────────────────────────────────────
+window.addEventListener('load', () => {
+  loadStats();
+  loadListings();
+});
+
+async function loadStats() {
+  try {
+    const res = await fetch('/api/stats');
+    const d = await res.json();
+    document.getElementById('stat-generated').textContent = d.total_generated;
+    document.getElementById('stat-published').textContent = d.total_published;
+    document.getElementById('stat-profit').textContent = '$' + (d.estimated_profit||0).toFixed(0);
+    document.getElementById('stat-margin').textContent = (d.avg_margin_pct||0).toFixed(1) + '%';
+
+    // Mini chart (mock daily data for now)
+    renderMiniChart(d.total_generated);
+  } catch(e) { console.error('Stats error', e); }
+}
+
+function renderMiniChart(total) {
+  const chart = document.getElementById('mini-chart');
+  // Generate fake sparkline data based on total
+  const bars = 20;
+  for (let i = 0; i < bars; i++) {
+    const div = document.createElement('div');
+    div.className = 'mini-bar';
+    const h = Math.max(4, Math.random() * 60);
+    div.style.height = h + 'px';
+    chart.appendChild(div);
+  }
+}
+
+async function loadListings() {
+  try {
+    const res = await fetch('/api/listings?limit=200');
+    const d   = await res.json();
+    allListings = d.listings || [];
+    renderTable();
+  } catch(e) {
+    document.getElementById('listings-tbody').innerHTML =
+      `<tr><td colspan="9" class="empty">⚠ Could not load listings.</td></tr>`;
+  }
+}
+
+// ── Filter & render ───────────────────────────
+function setFilter(status, btn) {
+  filterStatus = status;
+  currentPage  = 1;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable();
+}
+
+function filterTable() {
+  searchTerm  = document.getElementById('search-input').value.toLowerCase();
+  currentPage = 1;
+  renderTable();
+}
+
+function getFiltered() {
+  return allListings.filter(l => {
+    const matchStatus =
+      filterStatus === 'all' ? true :
+      filterStatus === 'warn' ? l.price_warning :
+      l.status === filterStatus;
+    const matchSearch = !searchTerm ||
+      (l.ebay_title || l.raw_title || '').toLowerCase().includes(searchTerm);
+    return matchStatus && matchSearch;
+  });
+}
+
+function renderTable() {
+  const filtered = getFiltered();
+  const total    = filtered.length;
+  const pages    = Math.ceil(total / PAGE_SIZE);
+  const start    = (currentPage - 1) * PAGE_SIZE;
+  const slice    = filtered.slice(start, start + PAGE_SIZE);
+
+  const tbody = document.getElementById('listings-tbody');
+  if (!slice.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">No listings found.</td></tr>`;
+  } else {
+    tbody.innerHTML = slice.map(l => `
+      <tr>
+        <td class="td-mono td-muted">${l.id}</td>
+        <td style="max-width:260px">
+          <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.83rem" title="${esc(l.ebay_title)}">
+            ${esc(l.ebay_title || l.raw_title || '—')}
+          </div>
+          <div style="font-family:var(--mono);font-size:.65rem;color:var(--muted);margin-top:.15rem">${esc(l.source_url||'').substring(0,50)}…</div>
+        </td>
+        <td class="td-mono td-muted">${l.raw_price ? '$'+l.raw_price.toFixed(2) : '—'}</td>
+        <td class="td-amber">${l.listing_price ? '$'+l.listing_price.toFixed(2) : '—'}</td>
+        <td class="td-mono td-muted">${l.market_avg_price ? '$'+l.market_avg_price.toFixed(2) : '—'}</td>
+        <td>
+          <div class="score-mini">${l.quality_score||0}</div>
+        </td>
+        <td>
+          <span class="badge ${l.published ? 'badge-published' : l.price_warning ? 'badge-warn' : 'badge-draft'}">
+            ${l.published ? 'PUBLISHED' : l.price_warning ? '⚠ OVERPRICED' : 'DRAFT'}
+          </span>
+        </td>
+        <td class="td-mono td-muted" style="font-size:.68rem">${formatDate(l.created_at)}</td>
+        <td>
+          <div style="display:flex;gap:.3rem">
+            <a href="/preview/${l.id}" class="btn btn-outline btn-sm">Edit</a>
+            <button class="btn btn-danger btn-sm" onclick="deleteListing(${l.id})">✕</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  // Pagination
+  const pag = document.getElementById('pagination');
+  pag.innerHTML = '';
+  if (pages > 1) {
+    for (let p = 1; p <= pages; p++) {
+      const btn = document.createElement('div');
+      btn.className = `page-num ${p === currentPage ? 'active' : ''}`;
+      btn.textContent = p;
+      btn.onclick = () => { currentPage = p; renderTable(); };
+      pag.appendChild(btn);
+    }
+  }
+}
+
+async function deleteListing(id) {
+  if (!confirm('Delete this listing?')) return;
+  await fetch(`/api/listings/${id}`, {method:'DELETE'});
+  allListings = allListings.filter(l => l.id !== id);
+  renderTable();
+  loadStats();
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'});
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
