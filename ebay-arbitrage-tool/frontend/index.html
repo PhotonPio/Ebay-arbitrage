@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>eBay Arbitrage Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #08090d;
+  --surface:   #0f1117;
+  --surface2:  #161922;
+  --border:    #1e2230;
+  --amber:     #f5a623;
+  --amber-dim: #c4841a;
+  --green:     #2dd4a0;
+  --red:       #f04e4e;
+  --blue:      #4e8af0;
+  --text:      #e8eaf0;
+  --muted:     #5a6070;
+  --mono:      'DM Mono', monospace;
+  --sans:      'DM Sans', sans-serif;
+  --display:   'Bebas Neue', cursive;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Grid bg ────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ── Header ─────────────────────────────────── */
+header {
+  position: relative; z-index: 10;
+  border-bottom: 1px solid var(--border);
+  padding: 0 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 60px;
+  background: rgba(8,9,13,0.95);
+  backdrop-filter: blur(8px);
+}
+.logo {
+  font-family: var(--display);
+  font-size: 1.5rem;
+  letter-spacing: 2px;
+  color: var(--amber);
+}
+.logo span { color: var(--text); }
+nav { display: flex; gap: 0.25rem; }
+nav a {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 4px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: all 0.15s;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+nav a:hover, nav a.active { color: var(--amber); background: rgba(245,166,35,0.08); }
+
+/* ── Ebay badge ─────────────────────────────── */
+#ebay-status {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.06em;
+}
+#ebay-status.connected { color: var(--green); border-color: var(--green); }
+#ebay-status.disconnected { color: var(--muted); }
+#ebay-status:hover { border-color: var(--amber); color: var(--amber); }
+
+/* ── Main layout ────────────────────────────── */
+main {
+  position: relative; z-index: 1;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 3rem 2rem;
+}
+
+/* ── Hero ────────────────────────────────────── */
+.hero { text-align: center; margin-bottom: 3rem; }
+.hero h1 {
+  font-family: var(--display);
+  font-size: clamp(3rem, 8vw, 6rem);
+  letter-spacing: 4px;
+  line-height: 1;
+  color: var(--text);
+}
+.hero h1 em { color: var(--amber); font-style: normal; }
+.hero p {
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+  font-weight: 300;
+  letter-spacing: 0.03em;
+}
+.hero-badge {
+  display: inline-block;
+  margin-top: 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--amber);
+  background: rgba(245,166,35,0.1);
+  border: 1px solid rgba(245,166,35,0.25);
+  padding: 0.25rem 0.75rem;
+  border-radius: 2px;
+}
+
+/* ── Card ────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.card-label {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+/* ── Tabs ────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px;
+  margin-bottom: 1.25rem;
+}
+.tab {
+  flex: 1; text-align: center;
+  padding: 0.55rem 1rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--muted);
+  transition: all 0.15s;
+  border: none; background: none;
+}
+.tab.active { color: var(--bg); background: var(--amber); }
+
+/* ── Inputs ──────────────────────────────────── */
+input[type="url"], input[type="number"], textarea, select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  padding: 0.75rem 1rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--amber); }
+input::placeholder, textarea::placeholder { color: var(--muted); }
+textarea { resize: vertical; min-height: 120px; }
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.field { margin-bottom: 1rem; }
+.field label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+
+/* ── Buttons ─────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+.btn-primary {
+  background: var(--amber);
+  color: #08090d;
+  font-weight: 600;
+}
+.btn-primary:hover { background: var(--amber-dim); transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0); }
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.btn-outline:hover { border-color: var(--amber); color: var(--amber); }
+.btn-danger { background: rgba(240,78,78,0.1); border: 1px solid var(--red); color: var(--red); }
+.btn-full { width: 100%; justify-content: center; }
+.btn-sm { padding: 0.4rem 0.9rem; font-size: 0.7rem; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+
+/* ── Progress bar ────────────────────────────── */
+.progress-wrap {
+  display: none;
+  margin-top: 1rem;
+}
+.progress-wrap.visible { display: block; }
+.progress-bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--amber);
+  border-radius: 2px;
+  transition: width 0.3s;
+  width: 0%;
+}
+.progress-label {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+
+/* ── Results list ────────────────────────────── */
+#results-section { display: none; }
+#results-section.visible { display: block; }
+
+.listing-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  transition: border-color 0.15s;
+  animation: fadeUp 0.3s ease;
+}
+.listing-card:hover { border-color: var(--amber); }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.listing-thumb {
+  width: 72px; height: 72px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--surface2);
+  flex-shrink: 0;
+}
+.listing-thumb-placeholder {
+  width: 72px; height: 72px;
+  background: var(--surface2);
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.listing-info { flex: 1; min-width: 0; }
+.listing-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 0.35rem;
+}
+.listing-meta {
+  display: flex; gap: 1rem; flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.listing-price { color: var(--amber); font-weight: 600; }
+.listing-badge {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 2px;
+  letter-spacing: 0.08em;
+}
+.badge-warning { background: rgba(245,166,35,0.15); color: var(--amber); }
+.badge-ok      { background: rgba(45,212,160,0.1);  color: var(--green); }
+.badge-draft   { background: rgba(90,96,112,0.15);  color: var(--muted); }
+
+.listing-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+
+/* ── Score ring ──────────────────────────────── */
+.score-ring {
+  width: 44px; height: 44px;
+  flex-shrink: 0;
+}
+.score-ring circle { fill: none; stroke-width: 4; }
+.score-bg { stroke: var(--surface2); }
+.score-fill { stroke: var(--amber); stroke-linecap: round;
+  transform: rotate(-90deg); transform-origin: 50% 50%;
+  transition: stroke-dashoffset 0.8s ease; }
+.score-text {
+  font-family: var(--mono); font-size: 9px; font-weight: 600;
+  fill: var(--text); text-anchor: middle;
+  dominant-baseline: central;
+}
+
+/* ── Warning banner ──────────────────────────── */
+.warn-banner {
+  display: none;
+  background: rgba(245,166,35,0.08);
+  border: 1px solid rgba(245,166,35,0.3);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  font-size: 0.82rem;
+  color: var(--amber);
+  margin-top: 0.75rem;
+  font-family: var(--mono);
+}
+.warn-banner.visible { display: flex; align-items: center; gap: 0.5rem; }
+
+/* ── Error ────────────────────────────────────── */
+.error-box {
+  display: none;
+  background: rgba(240,78,78,0.08);
+  border: 1px solid rgba(240,78,78,0.3);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  color: var(--red);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  margin-top: 0.75rem;
+}
+.error-box.visible { display: block; }
+
+/* ── Markup slider ─────────────────────────── */
+.slider-wrap { display: flex; align-items: center; gap: 1rem; }
+input[type=range] {
+  flex: 1;
+  -webkit-appearance: none;
+  background: var(--border);
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+  border: none;
+  padding: 0;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--amber);
+  cursor: pointer;
+}
+.slider-val {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--amber);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* ── Empty state ─────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--muted);
+}
+.empty-state svg { margin-bottom: 1rem; opacity: 0.3; }
+.empty-state p { font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.06em; }
+
+/* ── Responsive ───────────────────────────────── */
+@media (max-width: 640px) {
+  .field-row { grid-template-columns: 1fr; }
+  .listing-card { flex-wrap: wrap; }
+}
+</style>
+</head>
+
+<body>
+<header>
+  <div class="logo">FLIP<span>FORGE</span></div>
+  <nav>
+    <a href="/" class="active">GENERATE</a>
+    <a href="/dashboard">DASHBOARD</a>
+  </nav>
+  <button id="ebay-status" class="disconnected" onclick="connectEbay()">⬡ CONNECT EBAY</button>
+</header>
+
+<main>
+  <!-- Hero -->
+  <div class="hero">
+    <h1>RETAIL TO <em>EBAY</em><br>IN SECONDS</h1>
+    <p>Paste any product URL — AI generates an optimised listing with pricing intelligence.</p>
+    <span class="hero-badge">⚡ Powered by Claude AI + eBay Browse API</span>
+  </div>
+
+  <!-- Mode Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('single')">Single URL</button>
+    <button class="tab" onclick="switchTab('bulk')">Bulk Mode</button>
+  </div>
+
+  <!-- Input Card -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-label">Product Source</span>
+    </div>
+
+    <!-- Single URL -->
+    <div id="tab-single">
+      <div class="field">
+        <label>Product URL</label>
+        <input type="url" id="single-url" placeholder="https://www.amazon.com/dp/..." />
+      </div>
+    </div>
+
+    <!-- Bulk URLs -->
+    <div id="tab-bulk" style="display:none">
+      <div class="field">
+        <label>Product URLs — one per line (max 20)</label>
+        <textarea id="bulk-urls" rows="6" placeholder="https://www.amazon.com/dp/...&#10;https://www.bestbuy.com/site/...&#10;https://www.target.com/p/..."></textarea>
+      </div>
+    </div>
+
+    <!-- Options row -->
+    <div class="field-row">
+      <div class="field">
+        <label>Markup (%)</label>
+        <div class="slider-wrap">
+          <input type="range" id="markup" min="10" max="300" value="80"
+                 oninput="document.getElementById('markup-val').textContent = this.value + '%'" />
+          <span class="slider-val" id="markup-val">80%</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Handling time (days)</label>
+        <input type="number" id="handling" value="2" min="1" max="10" style="width:100%" />
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-full" id="generate-btn" onclick="generate()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+      </svg>
+      Generate Listing
+    </button>
+
+    <!-- Progress -->
+    <div class="progress-wrap" id="progress-wrap">
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+      <div class="progress-label" id="progress-label">Initialising...</div>
+    </div>
+
+    <!-- Error -->
+    <div class="error-box" id="error-box"></div>
+  </div>
+
+  <!-- Results -->
+  <div id="results-section">
+    <div class="card-header" style="margin-bottom:0.75rem">
+      <span class="card-label" id="results-label">Generated Listings</span>
+      <button class="btn btn-outline btn-sm" onclick="clearResults()">Clear All</button>
+    </div>
+    <div id="results-list"></div>
+  </div>
+
+</main>
+
+<script>
+// ── State ───────────────────────────────────────────────
+let mode = 'single';
+let ebayConnected = false;
+
+// ── Init ────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  checkEbayStatus();
+  if (new URLSearchParams(location.search).get('ebay_connected') === '1') {
+    showToast('✓ eBay account connected', 'green');
+  }
+});
+
+function checkEbayStatus() {
+  fetch('/api/ebay/status').then(r => r.json()).then(d => {
+    ebayConnected = d.connected;
+    const btn = document.getElementById('ebay-status');
+    if (d.connected) {
+      btn.textContent = '✓ EBAY CONNECTED';
+      btn.className = 'connected';
+    }
+  }).catch(() => {});
+}
+
+// ── Tab switching ────────────────────────────────────────
+function switchTab(m) {
+  mode = m;
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', (i === 0 && m === 'single') || (i === 1 && m === 'bulk'));
+  });
+  document.getElementById('tab-single').style.display = m === 'single' ? '' : 'none';
+  document.getElementById('tab-bulk').style.display   = m === 'bulk'   ? '' : 'none';
+}
+
+// ── Connect eBay ─────────────────────────────────────────
+function connectEbay() {
+  fetch('/api/ebay/auth-url').then(r => r.json()).then(d => {
+    window.location.href = d.url;
+  }).catch(e => showError('eBay credentials not configured. See README setup instructions.'));
+}
+
+// ── Generate ─────────────────────────────────────────────
+async function generate() {
+  const btn = document.getElementById('generate-btn');
+  btn.disabled = true;
+  hideError();
+  showProgress(5, 'Launching browser...');
+
+  const markup = parseInt(document.getElementById('markup').value) / 100;
+
+  try {
+    if (mode === 'single') {
+      const url = document.getElementById('single-url').value.trim();
+      if (!url) throw new Error('Please enter a product URL');
+      showProgress(20, 'Scraping product data...');
+      const res = await apiFetch('/api/scrape', 'POST', { url, markup });
+      showProgress(90, 'Generating listing...');
+      renderListing(res.listing);
+      showProgress(100, 'Done!');
+    } else {
+      const raw = document.getElementById('bulk-urls').value;
+      const urls = raw.split('\n').map(s => s.trim()).filter(Boolean);
+      if (!urls.length) throw new Error('Please enter at least one URL');
+      showProgress(10, `Processing ${urls.length} URLs...`);
+      const res = await apiFetch('/api/scrape/bulk', 'POST', { urls, markup });
+      showProgress(90, 'Rendering listings...');
+      res.listings.forEach(renderListing);
+      if (res.errors.length) {
+        showError(`${res.errors.length} URL(s) failed: ${res.errors.map(e => e.url).join(', ')}`);
+      }
+      showProgress(100, `Generated ${res.listings.length} listings`);
+    }
+
+    document.getElementById('results-section').classList.add('visible');
+  } catch(e) {
+    showError(e.message || 'Something went wrong. Check the console for details.');
+    hideProgress();
+  }
+
+  btn.disabled = false;
+}
+
+// ── Render listing card ───────────────────────────────────
+function renderListing(listing) {
+  const list = document.getElementById('results-list');
+  const hasWarn = listing.price_warning;
+  const score   = listing.quality_score || 0;
+  const circumference = 2 * Math.PI * 17;  // r=17
+  const offset = circumference - (score / 100) * circumference;
+  const imgSrc  = listing.local_images && listing.local_images.length
+    ? '/' + listing.local_images[0]
+    : null;
+
+  const card = document.createElement('div');
+  card.className = 'listing-card';
+  card.id = `listing-${listing.id}`;
+  card.innerHTML = `
+    ${imgSrc
+      ? `<img class="listing-thumb" src="${imgSrc}" alt="" onerror="this.parentNode.replaceChild(createPlaceholder(), this)">`
+      : `<div class="listing-thumb-placeholder"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>`
+    }
+    <div class="listing-info">
+      <div class="listing-title" title="${esc(listing.ebay_title)}">${esc(listing.ebay_title || listing.raw_title)}</div>
+      <div class="listing-meta">
+        <span class="listing-price">$${(listing.listing_price || 0).toFixed(2)}</span>
+        ${listing.market_avg_price ? `<span>Mkt avg: $${listing.market_avg_price.toFixed(2)}</span>` : ''}
+        <span>${listing.listing_shipping_days || '?'} day ship</span>
+        <span class="listing-badge ${hasWarn ? 'badge-warning' : 'badge-ok'}">
+          ${hasWarn ? '⚠ OVERPRICED' : '✓ PRICED OK'}
+        </span>
+        <span class="listing-badge badge-draft">${listing.status.toUpperCase()}</span>
+      </div>
+      ${hasWarn ? `<div class="warn-banner visible">⚠ Listing price exceeds market avg by >20%. Suggested: $${(listing.suggested_price || 0).toFixed(2)}</div>` : ''}
+    </div>
+    <!-- Quality ring -->
+    <svg class="score-ring" viewBox="0 0 44 44">
+      <circle class="score-bg" cx="22" cy="22" r="17"/>
+      <circle class="score-fill" cx="22" cy="22" r="17"
+        stroke-dasharray="${circumference}"
+        stroke-dashoffset="${offset}"/>
+      <text class="score-text" x="22" y="22">${score}</text>
+    </svg>
+    <!-- Actions -->
+    <div class="listing-actions">
+      <a href="/preview/${listing.id}" class="btn btn-outline btn-sm">PREVIEW</a>
+      <button class="btn btn-danger btn-sm" onclick="deleteListing(${listing.id})">✕</button>
+    </div>
+  `;
+  list.prepend(card);
+  document.getElementById('results-label').textContent =
+    `Generated Listings (${list.children.length})`;
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Delete ───────────────────────────────────────────────
+async function deleteListing(id) {
+  if (!confirm('Delete this listing?')) return;
+  await apiFetch(`/api/listings/${id}`, 'DELETE');
+  document.getElementById(`listing-${id}`)?.remove();
+}
+
+// ── Clear ────────────────────────────────────────────────
+function clearResults() {
+  document.getElementById('results-list').innerHTML = '';
+  document.getElementById('results-section').classList.remove('visible');
+}
+
+// ── API helper ────────────────────────────────────────────
+async function apiFetch(path, method='GET', body=null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'API error');
+  return data;
+}
+
+// ── Progress helpers ──────────────────────────────────────
+function showProgress(pct, label) {
+  document.getElementById('progress-wrap').classList.add('visible');
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = label;
+}
+function hideProgress() {
+  document.getElementById('progress-wrap').classList.remove('visible');
+}
+function showError(msg) {
+  const el = document.getElementById('error-box');
+  el.textContent = '⚠ ' + msg;
+  el.classList.add('visible');
+}
+function hideError() {
+  document.getElementById('error-box').classList.remove('visible');
+}
+function showToast(msg, color='amber') {
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:1.5rem;right:1.5rem;z-index:999;padding:0.6rem 1.2rem;background:var(--surface);border:1px solid var(--${color});color:var(--${color});font-family:var(--mono);font-size:0.75rem;border-radius:6px;animation:fadeUp 0.3s ease`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+</script>
+</body>
+</html>
