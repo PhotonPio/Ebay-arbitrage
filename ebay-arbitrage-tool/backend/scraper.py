@@ -24,6 +24,7 @@ class ScrapedProduct:
         self.images: list[str] = []
         self.shipping_days: Optional[int] = None
         self.url: str = ""
+        self.variants: list[dict] = []
 
     def to_dict(self):
         return {
@@ -35,6 +36,7 @@ class ScrapedProduct:
             "images": self.images,
             "shipping_days": self.shipping_days,
             "url": self.url,
+            "variants": self.variants,
         }
 
 
@@ -89,7 +91,9 @@ def _collect_meta_images(soup: BeautifulSoup) -> list[str]:
     urls: list[str] = []
     for sel in [
         'meta[property="og:image"]',
+        'meta[property="og:image:secure_url"]',
         'meta[name="og:image"]',
+        'meta[name="twitter:image:src"]',
         'meta[property="twitter:image"]',
         'meta[name="twitter:image"]',
     ]:
@@ -102,6 +106,64 @@ def _collect_meta_images(soup: BeautifulSoup) -> list[str]:
         if src:
             urls.append(src)
     return urls
+
+def _extract_image_urls_from_scripts(soup: BeautifulSoup) -> list[str]:
+    urls: list[str] = []
+    pattern = re.compile(r"https?://[^\"'\\s>]+\\.(?:jpg|jpeg|png|webp)(?:\\?[^\"'\\s>]*)?", re.I)
+    for script in soup.find_all("script"):
+        text = script.string or script.get_text() or ""
+        if not text or "image" not in text.lower():
+            continue
+        for match in pattern.findall(text):
+            urls.append(match)
+    return urls
+
+def _extract_variants(soup: BeautifulSoup) -> list[dict]:
+    variants: dict[str, set[str]] = {}
+
+    # Select dropdowns
+    for sel in soup.select("select"):
+        name = (
+            sel.get("aria-label")
+            or sel.get("name")
+            or sel.get("id")
+            or "Option"
+        )
+        options = []
+        for opt in sel.select("option"):
+            text = opt.get_text(strip=True)
+            if not text or text.lower() in {"select", "choose", "choose an option"}:
+                continue
+            options.append(text)
+        if options:
+            variants.setdefault(name, set()).update(options)
+
+    # Swatches / buttons
+    for el in soup.select("[data-variant],[data-option],[data-color],[data-size],[aria-label]"):
+        label = el.get("data-variant") or el.get("data-option") or el.get("data-color") or el.get("data-size")
+        value = el.get("aria-label") or el.get("title") or el.get_text(strip=True)
+        if not value or len(value) > 80:
+            continue
+        if label:
+            variants.setdefault(label, set()).add(value)
+
+    # Generic lists of options (buttons / spans)
+    for group in soup.select("[class*='variant'],[class*='option'],[class*='swatch'],[class*='size'],[class*='color']"):
+        items = []
+        for el in group.select("button,li,span,div"):
+            text = el.get_text(" ", strip=True)
+            if text and 1 <= len(text) <= 40:
+                items.append(text)
+        if len(items) >= 2:
+            name = group.get("aria-label") or group.get("data-name") or "Option"
+            variants.setdefault(name, set()).update(items)
+
+    out = []
+    for name, opts in variants.items():
+        clean = sorted({o for o in opts if o and len(o) <= 60})
+        if len(clean) >= 2:
+            out.append({"name": name[:50], "options": clean[:20]})
+    return out
 
 def _title_from_url(url: str) -> str:
     path = urlparse(url).path.strip("/")
@@ -320,6 +382,15 @@ def _parse_html(html: str, url: str) -> ScrapedProduct:
             if len(product.images) >= 12:
                 break
 
+    if len(product.images) < 3:
+        for src in _extract_image_urls_from_scripts(soup):
+            abs_src = _abs_url(src, url)
+            if abs_src not in seen:
+                seen.add(abs_src)
+                product.images.append(abs_src)
+            if len(product.images) >= 12:
+                break
+
     # ── Shipping ─────────────────────────────────────────────────────────────
     for sel in [".shipping", ".delivery", "[class*='ship']", "[class*='deliver']"]:
         tag = soup.select_one(sel)
@@ -390,9 +461,10 @@ async def scrape_product(url: str) -> ScrapedProduct:
     except ImportError:
         raise RuntimeError("Playwright not installed. Run: playwright install chromium")
 
-    async def _fetch_html(target_url: str, user_agent: str, extra_headers: dict[str, str]) -> str:
+    async def _fetch_html(target_url: str, user_agent: str, extra_headers: dict[str, str], engine: str = "chromium") -> dict:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
+            browser_type = getattr(p, engine)
+            browser = await browser_type.launch(
                 headless=True,
                 args=[
                     "--no-sandbox",
@@ -407,9 +479,15 @@ async def scrape_product(url: str) -> ScrapedProduct:
                 locale="en-US",
                 timezone_id="America/Los_Angeles",
                 extra_http_headers=extra_headers,
+                java_script_enabled=True,
+                bypass_csp=True,
             )
             await context.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+                """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
+"""
             )
             page = await context.new_page()
 
@@ -422,14 +500,40 @@ async def scrape_product(url: str) -> ScrapedProduct:
             try:
                 for wait_until in ("domcontentloaded", "load", "networkidle"):
                     try:
-                        await page.goto(target_url, wait_until=wait_until, timeout=45_000)
+                        await page.goto(target_url, wait_until=wait_until, timeout=60_000)
                         break
                     except Exception:
                         pass
                 await asyncio.sleep(2)
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
                 await asyncio.sleep(1)
-                return await page.content()
+                dom_data = await page.evaluate(
+                    """
+() => {
+  const urls = new Set();
+  const add = (u) => { if (u && !u.startsWith('data:')) urls.add(u); };
+  document.querySelectorAll('img').forEach(img => {
+    add(img.src);
+    (img.srcset || img.getAttribute('srcset') || '').split(',').forEach(s => add(s.trim().split(' ')[0]));
+    add(img.getAttribute('data-src'));
+    add(img.getAttribute('data-original'));
+    add(img.getAttribute('data-zoom-image'));
+  });
+  document.querySelectorAll('source').forEach(s => {
+    (s.srcset || s.getAttribute('srcset') || '').split(',').forEach(x => add(x.trim().split(' ')[0]));
+    add(s.src);
+  });
+  document.querySelectorAll('[style*="background-image"]').forEach(el => {
+    const m = (el.getAttribute('style') || '').match(/url\\(([^)]+)\\)/i);
+    if (m && m[1]) add(m[1].replace(/['"]/g,''));
+  });
+  const title = document.querySelector('h1')?.textContent?.trim() || document.title || '';
+  const desc = document.querySelector('meta[name="description"]')?.content || '';
+  return { images: Array.from(urls), title, desc };
+}
+"""
+                )
+                return {"html": await page.content(), "dom": dom_data, "engine": engine}
             finally:
                 await browser.close()
 
@@ -466,13 +570,23 @@ async def scrape_product(url: str) -> ScrapedProduct:
     }
 
     try:
-        html = await _fetch_html(url, ua_windows, headers)
+        result = {"html": "", "dom": {"images": [], "title": "", "desc": ""}, "engine": ""}
+        for engine in ("chromium", "firefox", "webkit"):
+            result = await _fetch_html(url, ua_windows, headers, engine=engine)
+            html = result.get("html", "")
+            if html and not _looks_blocked(html):
+                break
         if _looks_blocked(html):
             headers["user-agent"] = ua_mac
-            html = await _fetch_html(url, ua_mac, headers)
+            for engine in ("chromium", "firefox", "webkit"):
+                result = await _fetch_html(url, ua_mac, headers, engine=engine)
+                html = result.get("html", "")
+                if html and not _looks_blocked(html):
+                    break
         if _looks_blocked(html):
             # Fallback to a simple HTTP fetch (some sites block Playwright but allow HTML)
             html = await _fetch_html_httpx(url, headers)
+            result = {"html": html, "dom": {"images": [], "title": "", "desc": ""}, "engine": "httpx"}
     except Exception as e:
         print(f"⚠ Playwright navigation error: {e}")
 
@@ -514,16 +628,43 @@ async def scrape_product(url: str) -> ScrapedProduct:
     if not product.shipping_days:
         product.shipping_days = parsed.shipping_days
 
-    # Fallback title from og:title if empty
-    if not product.title:
-        tag = soup.select_one('meta[property="og:title"]')
-        if tag:
-            product.title = tag.get("content", "")
+    # Fallback title from DOM extraction
+    dom = result.get("dom", {}) if isinstance(result, dict) else {}
+    dom_title = (dom.get("title") or "").strip()
+    dom_desc = (dom.get("desc") or "").strip()
+    dom_images = dom.get("images") or []
 
-    # Fallback images from og:image
+    # Fallback title from DOM/og:title if empty
+    if not product.title:
+        if dom_title:
+            product.title = dom_title[:300]
+        else:
+            tag = soup.select_one('meta[property="og:title"]')
+            if tag:
+                product.title = tag.get("content", "")
+
+    # Fallback description from DOM/meta
+    if not product.description and dom_desc:
+        product.description = dom_desc[:2000]
+
+    # Fallback images from DOM/og:image
+    if dom_images:
+        for src in dom_images:
+            abs_src = _abs_url(src, url)
+            if abs_src not in product.images:
+                product.images.append(abs_src)
+            if len(product.images) >= 12:
+                break
     if not product.images:
         for src in _collect_meta_images(soup):
             product.images.append(src)
+
+    # Variants/options
+    product.variants = _extract_variants(soup)
+
+    if len(product.images) == 0:
+        product.specs = product.specs or {}
+        product.specs["Scrape Warning"] = f"No images found (engine={result.get('engine','')})"
 
     if _looks_blocked(html) and not (product.title or product.price or product.images):
         product.specs = product.specs or {}

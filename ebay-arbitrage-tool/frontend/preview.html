@@ -5,82 +5,84 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Listing Preview — FlipForge</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:#08090d; --surface:#0f1117; --surface2:#161922; --border:#1e2230;
-  --amber:#f5a623; --amber-dim:#c4841a; --green:#2dd4a0; --red:#f04e4e; --blue:#4e8af0;
-  --text:#e8eaf0; --muted:#5a6070;
-  --mono:'DM Mono',monospace; --sans:'DM Sans',sans-serif; --display:'Bebas Neue',cursive;
+  --bg:#f7f3ed; --surface:#ffffff; --surface2:#f1ede6; --border:#e3ddd3;
+  --amber:#e07a2f; --amber-dim:#c96925; --green:#0e6b4f; --red:#c43d3d; --blue:#2458b3;
+  --text:#151515; --muted:#5f5a52;
+  --mono:'JetBrains Mono',monospace; --sans:'Sora',sans-serif; --display:'Space Grotesk',sans-serif;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh}
-body::before{content:'';position:fixed;inset:0;z-index:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:48px 48px;opacity:.35;pointer-events:none}
-header{position:relative;z-index:10;border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:60px;background:rgba(8,9,13,.95);backdrop-filter:blur(8px)}
-.logo{font-family:var(--display);font-size:1.5rem;letter-spacing:2px;color:var(--amber)}
+body::before{content:'';position:fixed;inset:0;z-index:0;background:radial-gradient(1200px 600px at 10% -10%, rgba(14,107,79,0.18), transparent 60%),radial-gradient(1000px 500px at 90% 0%, rgba(224,122,47,0.16), transparent 60%),linear-gradient(180deg, #faf7f2 0%, #f7f3ed 100%);pointer-events:none}
+body::after{content:'';position:fixed;inset:0;z-index:0;background-image:radial-gradient(rgba(20,20,20,0.06) 1px, transparent 1px);background-size:36px 36px;opacity:.35;pointer-events:none}
+header{position:relative;z-index:10;border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;justify-content:space-between;height:60px;background:rgba(247,243,237,.9);backdrop-filter:blur(8px)}
+.logo{font-family:var(--display);font-size:1.5rem;letter-spacing:.5px;color:var(--green)}
 .logo span{color:var(--text)}
-nav a{font-family:var(--mono);font-size:.75rem;padding:.4rem .9rem;border-radius:4px;color:var(--muted);text-decoration:none;letter-spacing:.05em;text-transform:uppercase}
-nav a:hover{color:var(--amber)}
+nav a{font-family:var(--mono);font-size:.75rem;padding:.4rem .9rem;border-radius:6px;color:var(--muted);text-decoration:none;letter-spacing:.05em;text-transform:uppercase}
+nav a:hover{color:var(--green)}
 
 main{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:2rem}
 .layout{display:grid;grid-template-columns:1fr 380px;gap:1.5rem;align-items:start}
 @media(max-width:820px){.layout{grid-template-columns:1fr}}
 
 /* Cards */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1.5rem;margin-bottom:1.25rem}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:1.5rem;margin-bottom:1.25rem;box-shadow:0 12px 30px rgba(18,20,16,0.08)}
 .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
 .card-label{font-family:var(--mono);font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:var(--amber)}
 
 /* Form */
 .field{margin-bottom:1rem}
 .field label{display:block;font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:.4rem}
-input[type=text],input[type=number],textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:.875rem;padding:.65rem .9rem;outline:none;transition:border-color .15s}
-input:focus,textarea:focus{border-color:var(--amber)}
+input[type=text],input[type=number],textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--mono);font-size:.875rem;padding:.65rem .9rem;outline:none;transition:border-color .15s}
+input:focus,textarea:focus{border-color:var(--green)}
 textarea{resize:vertical;min-height:200px;font-size:.8rem;line-height:1.6}
 .char-count{font-family:var(--mono);font-size:.62rem;color:var(--muted);text-align:right;margin-top:.25rem}
 .char-count.over{color:var(--red)}
 
 /* Buttons */
-.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.65rem 1.25rem;border-radius:6px;font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;border:none;transition:all .15s;text-decoration:none}
-.btn-primary{background:var(--amber);color:#08090d;font-weight:600}
-.btn-primary:hover{background:var(--amber-dim)}
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.7rem 1.2rem;border-radius:10px;font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;border:none;transition:all .15s;text-decoration:none}
+.btn-primary{background:var(--green);color:#fff;font-weight:600}
+.btn-primary:hover{background:#0b5f47}
 .btn-outline{background:transparent;border:1px solid var(--border);color:var(--muted)}
-.btn-outline:hover{border-color:var(--amber);color:var(--amber)}
+.btn-outline:hover{border-color:var(--green);color:var(--green)}
 .btn-green{background:rgba(45,212,160,.1);border:1px solid var(--green);color:var(--green)}
 .btn-green:hover{background:rgba(45,212,160,.2)}
 .btn-full{width:100%;justify-content:center}
 .btn:disabled{opacity:.4;cursor:not-allowed}
 
 /* Price section */
-.price-display{font-family:var(--display);font-size:3rem;letter-spacing:2px;color:var(--amber);line-height:1}
+.price-display{font-family:var(--display);font-size:3rem;letter-spacing:1px;color:var(--green);line-height:1}
 .price-meta{font-family:var(--mono);font-size:.72rem;color:var(--muted);margin-top:.35rem}
 .price-row{display:flex;gap:.5rem;align-items:center;margin-top:.75rem}
 
 /* Warning */
-.warn-box{background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.3);border-radius:6px;padding:.75rem 1rem;font-size:.8rem;color:var(--amber);font-family:var(--mono);line-height:1.6;margin-top:.75rem}
+.warn-box{background:rgba(224,122,47,.08);border:1px solid rgba(224,122,47,.3);border-radius:10px;padding:.75rem 1rem;font-size:.8rem;color:var(--amber);font-family:var(--mono);line-height:1.6;margin-top:.75rem}
+.desc-render{border:1px solid var(--border);border-radius:12px;padding:14px;background:#fff;margin-top:.75rem}
 .warn-box.hidden{display:none}
 
 /* Image gallery */
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:.5rem;margin-top:.75rem}
 .gallery img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:4px;border:2px solid transparent;cursor:pointer;transition:border-color .15s}
-.gallery img:hover{border-color:var(--amber)}
-.gallery img.primary{border-color:var(--amber)}
+.gallery img:hover{border-color:var(--green)}
+.gallery img.primary{border-color:var(--green)}
 .gallery-main{width:100%;aspect-ratio:1;object-fit:contain;border-radius:6px;background:var(--surface2);margin-bottom:.75rem}
 
 /* Quality panel */
-.score-big{font-family:var(--display);font-size:5rem;letter-spacing:4px;line-height:1;color:var(--amber)}
+.score-big{font-family:var(--display);font-size:5rem;letter-spacing:1px;line-height:1;color:var(--green)}
 .score-grade{font-family:var(--mono);font-size:.75rem;color:var(--muted);margin-top:-.25rem}
 .score-bars{margin-top:1rem}
 .score-row{display:flex;align-items:center;gap:.75rem;margin-bottom:.6rem}
 .score-row-label{font-family:var(--mono);font-size:.65rem;letter-spacing:.08em;color:var(--muted);width:80px;flex-shrink:0}
 .score-row-bar{flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
-.score-row-fill{height:100%;background:var(--amber);border-radius:2px;transition:width .8s ease}
+.score-row-fill{height:100%;background:var(--green);border-radius:2px;transition:width .8s ease}
 .score-row-val{font-family:var(--mono);font-size:.65rem;color:var(--text);width:28px;text-align:right;flex-shrink:0}
 
 /* Shipping */
 .shipping-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.75rem}
-.shipping-cell{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;text-align:center}
-.shipping-cell .val{font-family:var(--display);font-size:2rem;color:var(--amber);letter-spacing:2px}
+.shipping-cell{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.75rem;text-align:center}
+.shipping-cell .val{font-family:var(--display);font-size:2rem;color:var(--green);letter-spacing:1px}
 .shipping-cell .lbl{font-family:var(--mono);font-size:.62rem;color:var(--muted);margin-top:.2rem;letter-spacing:.08em}
 
 /* Toast */
@@ -96,7 +98,7 @@ textarea{resize:vertical;min-height:200px;font-size:.8rem;line-height:1.6}
 /* Breadcrumb */
 .breadcrumb{font-family:var(--mono);font-size:.7rem;color:var(--muted);margin-bottom:1.5rem}
 .breadcrumb a{color:var(--muted);text-decoration:none}
-.breadcrumb a:hover{color:var(--amber)}
+.breadcrumb a:hover{color:var(--green)}
 .breadcrumb span{margin:0 .4rem}
 
 /* Save indicator */
@@ -151,9 +153,13 @@ textarea{resize:vertical;min-height:200px;font-size:.8rem;line-height:1.6}
           <span class="save-indicator" id="desc-saved">✓ saved</span>
         </div>
         <div class="field">
-          <textarea id="ebay-desc" rows="14" oninput="debounceSave('desc')"></textarea>
+          <textarea id="ebay-desc" rows="14" oninput="debounceSave('desc'); renderDesc()"></textarea>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="previewDesc()">Preview HTML</button>
+        <div class="desc-render" id="desc-render"></div>
+        <div style="display:flex;gap:.5rem;margin-top:.75rem">
+          <button class="btn btn-outline btn-sm" onclick="previewDesc()">Preview HTML</button>
+          <button class="btn btn-sm" onclick="renderDesc()">Render Below</button>
+        </div>
       </div>
 
       <!-- Specs -->
@@ -290,6 +296,7 @@ function renderAll() {
 
   // Description
   document.getElementById('ebay-desc').value = listing.ebay_description || '';
+  renderDesc();
 
   // Price
   const priceEl = document.getElementById('price-input');
@@ -444,6 +451,11 @@ function previewDesc() {
   document.getElementById('modal-content').innerHTML =
     document.getElementById('ebay-desc').value;
   document.getElementById('modal').style.display = 'block';
+}
+
+function renderDesc() {
+  const html = document.getElementById('ebay-desc').value || '';
+  document.getElementById('desc-render').innerHTML = html || '<em>No description yet.</em>';
 }
 
 // ── Helpers ────────────────────────────────────

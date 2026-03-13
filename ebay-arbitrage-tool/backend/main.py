@@ -24,7 +24,7 @@ from config.settings import (
     EBAY_CLIENT_ID, ANTHROPIC_API_KEY,
 )
 from backend.database import init_db, get_db, Listing
-from backend.scraper import scrape_product_sync
+from backend.scraper import scrape_product_sync, ScrapedProduct
 from backend.pricing_engine import calculate_price
 from backend.listing_generator import (
     generate_ebay_title, generate_ebay_description, calculate_quality_score,
@@ -67,6 +67,12 @@ print(f"{'='*55}\n")
 class ScrapeRequest(BaseModel):
     url: str
     markup: Optional[float] = DEFAULT_MARKUP
+    variant_selections: Optional[list[dict[str, str]]] = None
+    create_all_variants: Optional[bool] = False
+
+
+class VariantsRequest(BaseModel):
+    url: str
 
 
 class BulkScrapeRequest(BaseModel):
@@ -85,14 +91,48 @@ class UpdateListingRequest(BaseModel):
 # ── In-memory OAuth token store ───────────────────────────────────────────────
 _oauth_tokens: dict = {}
 
+# ── Scrape cache (10 min) ────────────────────────────────────────────────────
+_SCRAPE_CACHE: dict[str, tuple[datetime, ScrapedProduct]] = {}
+
+def _cache_product(url: str, product: ScrapedProduct):
+    _SCRAPE_CACHE[url] = (datetime.utcnow(), product)
+
+def _get_cached_product(url: str) -> Optional[ScrapedProduct]:
+    hit = _SCRAPE_CACHE.get(url)
+    if not hit:
+        return None
+    ts, product = hit
+    if (datetime.utcnow() - ts).total_seconds() > 600:
+        _SCRAPE_CACHE.pop(url, None)
+        return None
+    return product
+
 
 # ── Core listing builder ──────────────────────────────────────────────────────
 
-def _build_listing(db: Session, url: str, markup: float) -> Listing:
-    """Scrape URL, generate listing, persist to DB."""
+def _clone_product(p: ScrapedProduct) -> ScrapedProduct:
+    c = ScrapedProduct()
+    c.title = p.title
+    c.brand = p.brand
+    c.description = p.description
+    c.price = p.price
+    c.specs = dict(p.specs or {})
+    c.images = list(p.images or [])
+    c.shipping_days = p.shipping_days
+    c.url = p.url
+    c.variants = list(p.variants or [])
+    return c
 
-    # 1 — Scrape
-    product = scrape_product_sync(url)
+def _apply_variant(product: ScrapedProduct, selection: dict[str, str]) -> ScrapedProduct:
+    p = _clone_product(product)
+    for k, v in selection.items():
+        p.specs[str(k)] = str(v)
+        if v and v.lower() not in p.title.lower():
+            p.title = f"{p.title} {v}"
+    return p
+
+def _build_listing_from_product(db: Session, product: ScrapedProduct, markup: float) -> Listing:
+    """Generate listing from a scraped product and persist to DB."""
     if not product.title:
         product.title = "Product"
 
@@ -117,7 +157,7 @@ def _build_listing(db: Session, url: str, markup: float) -> Listing:
     )
 
     # 5 — Images
-    local_imgs = process_images(product.images, max_images=8, referer=product.url)
+    local_imgs = process_images(product.images, max_images=6, referer=product.url)
 
     # 6 — Quality score
     qs = calculate_quality_score(
@@ -131,7 +171,7 @@ def _build_listing(db: Session, url: str, markup: float) -> Listing:
 
     # 7 — Persist
     listing = Listing(
-        source_url=url,
+        source_url=product.url,
         raw_title=product.title,
         raw_brand=product.brand,
         raw_price=product.price,
@@ -155,6 +195,20 @@ def _build_listing(db: Session, url: str, markup: float) -> Listing:
     db.commit()
     db.refresh(listing)
     return listing
+
+def _build_listing(db: Session, url: str, markup: float) -> Listing:
+    product = scrape_product_sync(url)
+    return _build_listing_from_product(db, product, markup)
+
+def _build_variant_combinations(variants: list[dict]) -> list[dict[str, str]]:
+    combos: list[dict[str, str]] = [{}]
+    for v in variants:
+        name = v.get("name", "Option")
+        opts = v.get("options", [])
+        if not opts:
+            continue
+        combos = [{**c, name: opt} for c in combos for opt in opts]
+    return combos
 
 
 # ── UI Routes ─────────────────────────────────────────────────────────────────
@@ -191,8 +245,34 @@ def api_status():
 @app.post("/api/scrape")
 def api_scrape(req: ScrapeRequest, db: Session = Depends(get_db)):
     try:
-        listing = _build_listing(db, req.url.strip(), req.markup)
+        url = req.url.strip()
+        product = _get_cached_product(url) or scrape_product_sync(url)
+        _cache_product(url, product)
+
+        selections = req.variant_selections or []
+        if req.create_all_variants and product.variants:
+            selections = _build_variant_combinations(product.variants)
+
+        if selections:
+            listings = []
+            for sel in selections:
+                p = _apply_variant(product, sel)
+                listings.append(_build_listing_from_product(db, p, req.markup))
+            return {"success": True, "listings": [l.to_dict() for l in listings], "demo_mode": DEMO_MODE}
+
+        listing = _build_listing_from_product(db, product, req.markup)
         return {"success": True, "listing": listing.to_dict(), "demo_mode": DEMO_MODE}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/variants")
+def api_variants(req: VariantsRequest):
+    try:
+        url = req.url.strip()
+        product = _get_cached_product(url) or scrape_product_sync(url)
+        _cache_product(url, product)
+        return {"success": True, "variants": product.variants or []}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

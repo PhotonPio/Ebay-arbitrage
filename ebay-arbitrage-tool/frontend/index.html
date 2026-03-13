@@ -5,23 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>eBay Arbitrage Tool</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:        #08090d;
-  --surface:   #0f1117;
-  --surface2:  #161922;
-  --border:    #1e2230;
-  --amber:     #f5a623;
-  --amber-dim: #c4841a;
-  --green:     #2dd4a0;
-  --red:       #f04e4e;
-  --blue:      #4e8af0;
-  --text:      #e8eaf0;
-  --muted:     #5a6070;
-  --mono:      'DM Mono', monospace;
-  --sans:      'DM Sans', sans-serif;
-  --display:   'Bebas Neue', cursive;
+  --bg:        #f7f3ed;
+  --surface:   #ffffff;
+  --surface2:  #f1ede6;
+  --border:    #e3ddd3;
+  --amber:     #e07a2f;
+  --amber-dim: #c96925;
+  --green:     #0e6b4f;
+  --red:       #c43d3d;
+  --blue:      #2458b3;
+  --text:      #151515;
+  --muted:     #5f5a52;
+  --mono:      'JetBrains Mono', monospace;
+  --sans:      'Sora', sans-serif;
+  --display:   'Space Grotesk', sans-serif;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -33,15 +33,21 @@ html, body {
   overflow-x: hidden;
 }
 
-/* ── Grid bg ────────────────────────────────── */
 body::before {
   content: '';
   position: fixed; inset: 0; z-index: 0;
-  background-image:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px);
-  background-size: 48px 48px;
-  opacity: 0.4;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(14,107,79,0.18), transparent 60%),
+    radial-gradient(1000px 500px at 90% 0%, rgba(224,122,47,0.16), transparent 60%),
+    linear-gradient(180deg, #faf7f2 0%, #f7f3ed 100%);
+  pointer-events: none;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0; z-index: 0;
+  background-image: radial-gradient(rgba(20,20,20,0.06) 1px, transparent 1px);
+  background-size: 36px 36px;
+  opacity: 0.35;
   pointer-events: none;
 }
 
@@ -54,14 +60,14 @@ header {
   align-items: center;
   justify-content: space-between;
   height: 60px;
-  background: rgba(8,9,13,0.95);
+  background: rgba(247,243,237,0.9);
   backdrop-filter: blur(8px);
 }
 .logo {
   font-family: var(--display);
   font-size: 1.5rem;
-  letter-spacing: 2px;
-  color: var(--amber);
+  letter-spacing: 0.5px;
+  color: var(--green);
 }
 .logo span { color: var(--text); }
 nav { display: flex; gap: 0.25rem; }
@@ -76,7 +82,7 @@ nav a {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
-nav a:hover, nav a.active { color: var(--amber); background: rgba(245,166,35,0.08); }
+nav a:hover, nav a.active { color: var(--green); background: rgba(14,107,79,0.08); }
 
 /* ── Ebay badge ─────────────────────────────── */
 #ebay-status {
@@ -91,7 +97,7 @@ nav a:hover, nav a.active { color: var(--amber); background: rgba(245,166,35,0.0
 }
 #ebay-status.connected { color: var(--green); border-color: var(--green); }
 #ebay-status.disconnected { color: var(--muted); }
-#ebay-status:hover { border-color: var(--amber); color: var(--amber); }
+#ebay-status:hover { border-color: var(--green); color: var(--green); }
 
 /* ── Main layout ────────────────────────────── */
 main {
@@ -136,9 +142,10 @@ main {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 14px;
   padding: 1.5rem;
   margin-bottom: 1.25rem;
+  box-shadow: 0 12px 30px rgba(18,20,16,0.08);
 }
 .card-header {
   display: flex;
@@ -158,9 +165,9 @@ main {
 .tabs {
   display: flex;
   gap: 0;
-  background: var(--bg);
+  background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 10px;
   padding: 3px;
   margin-bottom: 1.25rem;
 }
@@ -177,7 +184,7 @@ main {
   transition: all 0.15s;
   border: none; background: none;
 }
-.tab.active { color: var(--bg); background: var(--amber); }
+.tab.active { color: #fff; background: var(--green); }
 
 /* ── Inputs ──────────────────────────────────── */
 input[type="url"], input[type="number"], textarea, select {
@@ -217,7 +224,7 @@ textarea { resize: vertical; min-height: 120px; }
 .btn {
   display: inline-flex; align-items: center; gap: 0.5rem;
   padding: 0.75rem 1.5rem;
-  border-radius: 6px;
+  border-radius: 10px;
   font-family: var(--mono);
   font-size: 0.8rem;
   letter-spacing: 0.08em;
@@ -228,18 +235,18 @@ textarea { resize: vertical; min-height: 120px; }
   text-decoration: none;
 }
 .btn-primary {
-  background: var(--amber);
-  color: #08090d;
+  background: var(--green);
+  color: #fff;
   font-weight: 600;
 }
-.btn-primary:hover { background: var(--amber-dim); transform: translateY(-1px); }
+.btn-primary:hover { background: #0b5f47; transform: translateY(-1px); }
 .btn-primary:active { transform: translateY(0); }
 .btn-outline {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--muted);
 }
-.btn-outline:hover { border-color: var(--amber); color: var(--amber); }
+.btn-outline:hover { border-color: var(--green); color: var(--green); }
 .btn-danger { background: rgba(240,78,78,0.1); border: 1px solid var(--red); color: var(--red); }
 .btn-full { width: 100%; justify-content: center; }
 .btn-sm { padding: 0.4rem 0.9rem; font-size: 0.7rem; }
@@ -260,7 +267,7 @@ textarea { resize: vertical; min-height: 120px; }
 }
 .progress-fill {
   height: 100%;
-  background: var(--amber);
+  background: var(--green);
   border-radius: 2px;
   transition: width 0.3s;
   width: 0%;
@@ -272,6 +279,83 @@ textarea { resize: vertical; min-height: 120px; }
   letter-spacing: 0.08em;
 }
 
+/* ── Variant modal ──────────────────────────── */
+.modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18,18,18,0.35);
+  z-index: 999;
+  padding: 1.5rem;
+}
+.modal.active { display: flex; }
+.modal-card {
+  width: min(720px, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 18px 50px rgba(18,20,16,0.18);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.modal-title {
+  font-family: var(--display);
+  font-size: 1.4rem;
+  color: var(--text);
+}
+.modal-body { display: grid; gap: 1rem; }
+.variant-group {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: var(--surface2);
+}
+.variant-name {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+.variant-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.variant-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
+.icon-btn {
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  border-radius: 8px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
 /* ── Results list ────────────────────────────── */
 #results-section { display: none; }
 #results-section.visible { display: block; }
@@ -279,8 +363,9 @@ textarea { resize: vertical; min-height: 120px; }
 .listing-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 14px;
   padding: 1.25rem;
+  box-shadow: 0 12px 30px rgba(18,20,16,0.08);
   margin-bottom: 0.75rem;
   display: flex;
   gap: 1rem;
@@ -511,15 +596,32 @@ input[type=range]::-webkit-slider-thumb {
       <span class="card-label" id="results-label">Generated Listings</span>
       <button class="btn btn-outline btn-sm" onclick="clearResults()">Clear All</button>
     </div>
-    <div id="results-list"></div>
+  <div id="results-list"></div>
   </div>
 
 </main>
+
+<!-- Variant selection modal -->
+<div class="modal" id="variant-modal">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title">Select Variants</div>
+      <button class="icon-btn" onclick="closeVariantModal()">×</button>
+    </div>
+    <div class="modal-body" id="variant-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeVariantModal()">Cancel</button>
+      <button class="btn btn-outline" onclick="createAllVariants()">Create All</button>
+      <button class="btn btn-primary" onclick="createSelectedVariants()">Create Selected</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ── State ───────────────────────────────────────────────
 let mode = 'single';
 let ebayConnected = false;
+let variantState = null;
 
 // ── Init ────────────────────────────────────────────────
 window.addEventListener('load', () => {
@@ -571,9 +673,16 @@ async function generate() {
       const url = document.getElementById('single-url').value.trim();
       if (!url) throw new Error('Please enter a product URL');
       showProgress(20, 'Scraping product data...');
+      const vres = await apiFetch('/api/variants', 'POST', { url });
+      if (vres.variants && vres.variants.length) {
+        showVariantModal(url, markup, vres.variants);
+        hideProgress();
+        btn.disabled = false;
+        return;
+      }
       const res = await apiFetch('/api/scrape', 'POST', { url, markup });
       showProgress(90, 'Generating listing...');
-      renderListing(res.listing);
+      renderScrapeResponse(res);
       showProgress(100, 'Done!');
     } else {
       const raw = document.getElementById('bulk-urls').value;
@@ -596,6 +705,98 @@ async function generate() {
   }
 
   btn.disabled = false;
+}
+
+// ── Variants ─────────────────────────────────────────────
+function showVariantModal(url, markup, variants) {
+  variantState = { url, markup, variants };
+  const body = document.getElementById('variant-body');
+  body.innerHTML = '';
+  variants.forEach((v, idx) => {
+    const group = document.createElement('div');
+    group.className = 'variant-group';
+    group.innerHTML = `
+      <div class="variant-name">${esc(v.name || 'Option')}</div>
+      <div class="variant-options" id="variant-opts-${idx}"></div>
+    `;
+    const optWrap = group.querySelector('.variant-options');
+    (v.options || []).forEach((opt, j) => {
+      const id = `variant-${idx}-${j}`;
+      const label = document.createElement('label');
+      label.className = 'variant-pill';
+      label.innerHTML = `<input type="checkbox" id="${id}" data-variant="${esc(v.name)}" value="${esc(opt)}"> ${esc(opt)}`;
+      optWrap.appendChild(label);
+    });
+    body.appendChild(group);
+  });
+  document.getElementById('variant-modal').classList.add('active');
+}
+
+function closeVariantModal() {
+  variantState = null;
+  document.getElementById('variant-modal').classList.remove('active');
+}
+
+function buildSelections(fromChecked) {
+  const variants = variantState?.variants || [];
+  const groups = variants.map(v => {
+    const name = v.name || 'Option';
+    let options = v.options || [];
+    if (fromChecked) {
+      options = Array.from(document.querySelectorAll(`input[data-variant="${CSS.escape(name)}"]:checked`))
+        .map(el => el.value);
+    }
+    return { name, options };
+  });
+
+  if (fromChecked && groups.some(g => g.options.length === 0)) {
+    throw new Error('Select at least one option for each variant.');
+  }
+
+  let combos = [{}];
+  groups.forEach(g => {
+    combos = combos.flatMap(c => g.options.map(opt => ({ ...c, [g.name]: opt })));
+  });
+  return combos;
+}
+
+async function createSelectedVariants() {
+  try {
+    const selections = buildSelections(true);
+    const res = await apiFetch('/api/scrape', 'POST', {
+      url: variantState.url,
+      markup: variantState.markup,
+      variant_selections: selections,
+    });
+    renderScrapeResponse(res);
+    closeVariantModal();
+    document.getElementById('results-section').classList.add('visible');
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function createAllVariants() {
+  try {
+    const res = await apiFetch('/api/scrape', 'POST', {
+      url: variantState.url,
+      markup: variantState.markup,
+      create_all_variants: true,
+    });
+    renderScrapeResponse(res);
+    closeVariantModal();
+    document.getElementById('results-section').classList.add('visible');
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+function renderScrapeResponse(res) {
+  if (res.listings && res.listings.length) {
+    res.listings.forEach(renderListing);
+  } else if (res.listing) {
+    renderListing(res.listing);
+  }
 }
 
 // ── Render listing card ───────────────────────────────────

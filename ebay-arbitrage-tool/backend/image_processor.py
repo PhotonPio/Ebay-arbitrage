@@ -83,8 +83,10 @@ def download_and_process_image(url: str, referer: Optional[str] = None) -> Optio
 def process_images(urls: list[str], max_images: int = 12, referer: Optional[str] = None) -> list[str]:
     """Process a list of image URLs; return list of local paths."""
     local = []
-    for url in urls[:max_images]:
+    for url in urls:
         path = download_and_process_image(url, referer=referer)
         if path:
             local.append(path)
+        if len(local) >= max_images:
+            break
     return local
