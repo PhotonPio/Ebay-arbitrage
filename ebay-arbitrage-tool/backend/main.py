@@ -1,457 +1,216 @@
-"""
-FlipForge — FastAPI Backend
-All API routes, background tasks, and static file serving.
-"""
 import json
-import sys
-import asyncio
 from pathlib import Path
-from datetime import datetime
-from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, WebSocket
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from config.settings import (
-    DEFAULT_MARKUP, SHIPPING_MULTIPLIER, DEFAULT_HANDLING,
-    IMAGE_DIR, PROCESSED_DIR, BASE_DIR, DEMO_MODE,
-    EBAY_CLIENT_ID, ANTHROPIC_API_KEY,
-)
-from backend.database import init_db, get_db, Listing
-from backend.scraper import scrape_product_sync, ScrapedProduct
-from backend.pricing_engine import calculate_price
-from backend.listing_generator import (
-    generate_ebay_title, generate_ebay_description, calculate_quality_score,
-)
-from backend.image_processor import process_images
 from backend import ebay_api
+from backend.database import Listing, ScannerResult, get_db, init_db
+from backend.exceptions import FlipForgeError
+from backend.export import export_amazon, export_bulk_zip, export_etsy, export_facebook, export_generic_csv
+from backend.image_processor import process_images
+from backend.listing_generator import calculate_quality_score, generate_ebay_description, generate_ebay_title
+from backend.pricing_engine import calculate_price
+from backend.scanner import scan_all_targets
+from backend.scraper import scrape_product_sync
+from backend.vero_checker import check_brand
+from config.settings import BASE_DIR, DEFAULT_HANDLING, DEFAULT_MARKUP, DEMO_MODE, SHIPPING_MULTIPLIER
 
-# ── Startup ───────────────────────────────────────────────────────────────────
 init_db()
-
-# Ensure static dirs exist
-(BASE_DIR / "static" / "images").mkdir(parents=True, exist_ok=True)
 (BASE_DIR / "static" / "processed").mkdir(parents=True, exist_ok=True)
-
-app = FastAPI(
-    title="FlipForge — eBay Arbitrage Tool",
-    version="1.0.0",
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Serve static assets and frontend
+app = FastAPI(title="FlipForge", version="2.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
-print(f"\n{'='*55}")
-print(f"  FlipForge — eBay Arbitrage Tool")
-print(f"  Demo Mode: {'✅ ON (no API keys needed)' if DEMO_MODE else '❌ OFF'}")
-print(f"  eBay API:  {'✅ Configured' if EBAY_CLIENT_ID else '⚠  Not configured'}")
-print(f"  Claude AI: {'✅ Configured' if ANTHROPIC_API_KEY else '⚠  Not configured (using rule-based)'}")
-print(f"{'='*55}\n")
 
+@app.exception_handler(FlipForgeError)
+async def flipforge_error_handler(request, exc):
+    return JSONResponse(status_code=400, content={"success": False, "error_type": type(exc).__name__, "message": str(exc)})
 
-# ── Pydantic Schemas ──────────────────────────────────────────────────────────
 
 class ScrapeRequest(BaseModel):
     url: str
-    markup: Optional[float] = DEFAULT_MARKUP
-    variant_selections: Optional[list[dict[str, str]]] = None
-    create_all_variants: Optional[bool] = False
+    markup: float = DEFAULT_MARKUP
+    download_images: bool = False
 
-
-class VariantsRequest(BaseModel):
-    url: str
-
-
-class BulkScrapeRequest(BaseModel):
-    urls: list[str]
-    markup: Optional[float] = DEFAULT_MARKUP
-
-
-class UpdateListingRequest(BaseModel):
-    ebay_title: Optional[str] = None
-    ebay_description: Optional[str] = None
-    listing_price: Optional[float] = None
-    handling_days: Optional[int] = None
-    listing_shipping_days: Optional[int] = None
-
-
-# ── In-memory OAuth token store ───────────────────────────────────────────────
-_oauth_tokens: dict = {}
-
-# ── Scrape cache (10 min) ────────────────────────────────────────────────────
-_SCRAPE_CACHE: dict[str, tuple[datetime, ScrapedProduct]] = {}
-
-def _cache_product(url: str, product: ScrapedProduct):
-    _SCRAPE_CACHE[url] = (datetime.utcnow(), product)
-
-def _get_cached_product(url: str) -> Optional[ScrapedProduct]:
-    hit = _SCRAPE_CACHE.get(url)
-    if not hit:
-        return None
-    ts, product = hit
-    if (datetime.utcnow() - ts).total_seconds() > 600:
-        _SCRAPE_CACHE.pop(url, None)
-        return None
-    return product
-
-
-# ── Core listing builder ──────────────────────────────────────────────────────
-
-def _clone_product(p: ScrapedProduct) -> ScrapedProduct:
-    c = ScrapedProduct()
-    c.title = p.title
-    c.brand = p.brand
-    c.description = p.description
-    c.price = p.price
-    c.specs = dict(p.specs or {})
-    c.images = list(p.images or [])
-    c.shipping_days = p.shipping_days
-    c.url = p.url
-    c.variants = list(p.variants or [])
-    return c
-
-def _apply_variant(product: ScrapedProduct, selection: dict[str, str]) -> ScrapedProduct:
-    p = _clone_product(product)
-    for k, v in selection.items():
-        p.specs[str(k)] = str(v)
-        if v and v.lower() not in p.title.lower():
-            p.title = f"{p.title} {v}"
-    return p
-
-def _build_listing_from_product(db: Session, product: ScrapedProduct, markup: float) -> Listing:
-    """Generate listing from a scraped product and persist to DB."""
-    if not product.title:
-        product.title = "Product"
-
-    # 2 — Shipping
-    retail_days  = product.shipping_days or 5
-    listing_days = retail_days * SHIPPING_MULTIPLIER
-
-    # 3 — Pricing
-    pricing = {}
-    if product.price:
-        pricing = calculate_price(product.price, product.title, markup)
-
-    # 4 — Generate listing content
-    ebay_title = generate_ebay_title(product.title, product.brand, product.specs)
-    ebay_desc  = generate_ebay_description(
-        title=ebay_title,
-        brand=product.brand,
-        raw_description=product.description,
-        specs=product.specs,
-        shipping_days=listing_days,
-        handling_days=DEFAULT_HANDLING,
-    )
-
-    # 5 — Images
-    local_imgs = process_images(product.images, max_images=6, referer=product.url)
-
-    # 6 — Quality score
-    qs = calculate_quality_score(
-        title=ebay_title,
-        description=ebay_desc,
-        images=local_imgs,
-        price=pricing.get("listing_price"),
-        market_avg=pricing.get("market_avg"),
-        specs=product.specs,
-    )
-
-    # 7 — Persist
-    listing = Listing(
-        source_url=product.url,
-        raw_title=product.title,
-        raw_brand=product.brand,
-        raw_price=product.price,
-        raw_description=product.description,
-        raw_specs=json.dumps(product.specs),
-        raw_images=json.dumps(product.images),
-        ebay_title=ebay_title,
-        ebay_description=ebay_desc,
-        listing_price=pricing.get("listing_price"),
-        market_avg_price=pricing.get("market_avg"),
-        price_warning=pricing.get("warning", False),
-        suggested_price=pricing.get("suggested_price"),
-        local_images=json.dumps(local_imgs),
-        retail_shipping_days=retail_days,
-        listing_shipping_days=listing_days,
-        handling_days=DEFAULT_HANDLING,
-        quality_score=qs["total"],
-        status="draft",
-    )
-    db.add(listing)
-    db.commit()
-    db.refresh(listing)
-    return listing
-
-def _build_listing(db: Session, url: str, markup: float) -> Listing:
-    product = scrape_product_sync(url)
-    return _build_listing_from_product(db, product, markup)
-
-def _build_variant_combinations(variants: list[dict]) -> list[dict[str, str]]:
-    combos: list[dict[str, str]] = [{}]
-    for v in variants:
-        name = v.get("name", "Option")
-        opts = v.get("options", [])
-        if not opts:
-            continue
-        combos = [{**c, name: opt} for c in combos for opt in opts]
-    return combos
-
-
-# ── UI Routes ─────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
-async def serve_index():
+async def index():
     return HTMLResponse((BASE_DIR / "frontend" / "index.html").read_text())
 
 
-@app.get("/dashboard", response_class=HTMLResponse)
-async def serve_dashboard():
-    return HTMLResponse((BASE_DIR / "frontend" / "dashboard.html").read_text())
-
-
 @app.get("/preview/{listing_id}", response_class=HTMLResponse)
-async def serve_preview(listing_id: int):
+async def preview_page(listing_id: int):
     return HTMLResponse((BASE_DIR / "frontend" / "preview.html").read_text())
 
 
-# ── API Routes ────────────────────────────────────────────────────────────────
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page():
+    return HTMLResponse((BASE_DIR / "frontend" / "dashboard.html").read_text())
+
+
+@app.get("/scanner", response_class=HTMLResponse)
+async def scanner_page():
+    return HTMLResponse((BASE_DIR / "frontend" / "scanner.html").read_text())
+
 
 @app.get("/api/status")
-def api_status():
-    """Returns current app configuration — useful for the frontend banner."""
+def status():
+    return {"demo_mode": DEMO_MODE, "ebay_configured": True, "claude_configured": True, "ebay_connected": DEMO_MODE, "version": "2.0"}
+
+
+@app.get("/api/stats")
+def stats(db: Session = Depends(get_db)):
+    listings = db.query(Listing).all()
     return {
-        "demo_mode": DEMO_MODE,
-        "ebay_configured": bool(EBAY_CLIENT_ID),
-        "claude_configured": bool(ANTHROPIC_API_KEY),
-        "ebay_connected": "default" in _oauth_tokens,
-        "version": "1.0.0",
+        "total_generated": len(listings),
+        "published": sum(1 for l in listings if l.published),
+        "net_profit": round(sum((l.net_profit or 0) for l in listings), 2),
+        "avg_quality": round(sum((l.quality_score or 0) for l in listings) / len(listings), 2) if listings else 0,
     }
 
 
-@app.post("/api/scrape")
-def api_scrape(req: ScrapeRequest, db: Session = Depends(get_db)):
-    try:
-        url = req.url.strip()
-        product = _get_cached_product(url) or scrape_product_sync(url)
-        _cache_product(url, product)
-
-        selections = req.variant_selections or []
-        if req.create_all_variants and product.variants:
-            selections = _build_variant_combinations(product.variants)
-
-        if selections:
-            listings = []
-            for sel in selections:
-                p = _apply_variant(product, sel)
-                listings.append(_build_listing_from_product(db, p, req.markup))
-            return {"success": True, "listings": [l.to_dict() for l in listings], "demo_mode": DEMO_MODE}
-
-        listing = _build_listing_from_product(db, product, req.markup)
-        return {"success": True, "listing": listing.to_dict(), "demo_mode": DEMO_MODE}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/variants")
-def api_variants(req: VariantsRequest):
-    try:
-        url = req.url.strip()
-        product = _get_cached_product(url) or scrape_product_sync(url)
-        _cache_product(url, product)
-        return {"success": True, "variants": product.variants or []}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/scrape/bulk")
-def api_bulk_scrape(req: BulkScrapeRequest, db: Session = Depends(get_db)):
-    results, errors = [], []
-    for url in req.urls[:20]:
-        url = url.strip()
-        if not url:
-            continue
-        try:
-            listing = _build_listing(db, url, req.markup)
-            results.append(listing.to_dict())
-        except Exception as e:
-            errors.append({"url": url, "error": str(e)})
-    return {"success": True, "listings": results, "errors": errors, "demo_mode": DEMO_MODE}
-
-
 @app.get("/api/listings")
-def api_get_listings(
-    status: Optional[str] = None,
-    limit: int = Query(50, le=200),
-    offset: int = 0,
-    db: Session = Depends(get_db),
-):
-    q = db.query(Listing)
-    if status:
-        q = q.filter(Listing.status == status)
-    total = q.count()
-    items = q.order_by(Listing.created_at.desc()).offset(offset).limit(limit).all()
-    return {"total": total, "listings": [l.to_dict() for l in items]}
+def get_listings(db: Session = Depends(get_db)):
+    return {"success": True, "listings": [l.to_dict() for l in db.query(Listing).order_by(Listing.id.desc()).all()]}
 
 
-@app.get("/api/listings/{listing_id}")
-def api_get_listing(listing_id: int, db: Session = Depends(get_db)):
-    listing = db.query(Listing).filter(Listing.id == listing_id).first()
-    if not listing:
-        raise HTTPException(status_code=404, detail="Listing not found")
-    return listing.to_dict()
+@app.post("/api/scrape")
+def scrape(req: ScrapeRequest, db: Session = Depends(get_db)):
+    try:
+        product = scrape_product_sync(req.url, download_images=req.download_images)
+        if product.error:
+            return JSONResponse(status_code=500, content={"success": False, "error_type": product.error.error_type, "message": product.error.message})
+
+        pricing = calculate_price(product.price or 0, product.title, req.markup)
+        title = generate_ebay_title(product.title, product.brand, product.specs)
+        description = generate_ebay_description(title, product.brand, product.description, product.specs, (product.shipping_days or 5) * SHIPPING_MULTIPLIER, DEFAULT_HANDLING)
+        processed = process_images(product.images, max_images=12, referer=product.source_url)
+        quality = calculate_quality_score(title, description, processed, pricing["listing_price"], pricing.get("market_avg"), product.specs)
+        vero = check_brand(product.brand)
+
+        listing = Listing(
+            source_url=product.source_url,
+            raw_title=product.title,
+            raw_brand=product.brand,
+            raw_price=product.price,
+            raw_description=product.description,
+            raw_specs=json.dumps(product.specs),
+            raw_images=json.dumps(product.images),
+            ebay_title=title,
+            ebay_description=description,
+            listing_price=pricing["listing_price"],
+            market_avg_price=pricing.get("market_avg"),
+            price_warning=pricing.get("price_warning"),
+            suggested_price=pricing.get("suggested_price"),
+            local_images=json.dumps(processed),
+            retail_shipping_days=product.shipping_days or 5,
+            listing_shipping_days=(product.shipping_days or 5) * SHIPPING_MULTIPLIER,
+            handling_days=DEFAULT_HANDLING,
+            quality_score=quality["total"],
+            quality_breakdown=json.dumps(quality["breakdown"]),
+            improvement_tips=json.dumps(quality["improvement_tips"]),
+            vero_risk_level=vero["risk_level"],
+            ebay_fee=pricing["ebay_fee"],
+            paypal_fee=pricing["paypal_fee"],
+            net_profit=pricing["net_profit"],
+            status="draft",
+        )
+        db.add(listing)
+        db.commit()
+        db.refresh(listing)
+        return {"success": True, "listing": listing.to_dict(), "pricing": pricing, "vero": vero}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error_type": "scrape_failed", "message": str(e)})
 
 
 @app.patch("/api/listings/{listing_id}")
-def api_update_listing(
-    listing_id: int,
-    req: UpdateListingRequest,
-    db: Session = Depends(get_db),
-):
-    listing = db.query(Listing).filter(Listing.id == listing_id).first()
-    if not listing:
-        raise HTTPException(status_code=404, detail="Listing not found")
-    if req.ebay_title is not None:
-        listing.ebay_title = req.ebay_title[:80]
-    if req.ebay_description is not None:
-        listing.ebay_description = req.ebay_description
-    if req.listing_price is not None:
-        listing.listing_price = req.listing_price
-    if req.handling_days is not None:
-        listing.handling_days = req.handling_days
-    if req.listing_shipping_days is not None:
-        listing.listing_shipping_days = req.listing_shipping_days
-    listing.updated_at = datetime.utcnow()
+def patch_listing(listing_id: int, payload: dict, db: Session = Depends(get_db)):
+    item = db.query(Listing).filter(Listing.id == listing_id).first()
+    if not item:
+        raise HTTPException(404, "Listing not found")
+    for k, v in payload.items():
+        if hasattr(item, k):
+            setattr(item, k, v)
     db.commit()
-    db.refresh(listing)
-    return listing.to_dict()
+    db.refresh(item)
+    return {"success": True, "listing": item.to_dict()}
 
 
 @app.delete("/api/listings/{listing_id}")
-def api_delete_listing(listing_id: int, db: Session = Depends(get_db)):
-    listing = db.query(Listing).filter(Listing.id == listing_id).first()
-    if not listing:
-        raise HTTPException(status_code=404, detail="Listing not found")
-    db.delete(listing)
+def delete_listing(listing_id: int, db: Session = Depends(get_db)):
+    item = db.query(Listing).filter(Listing.id == listing_id).first()
+    if not item:
+        raise HTTPException(404, "Listing not found")
+    db.delete(item)
     db.commit()
     return {"success": True}
 
 
-@app.get("/api/stats")
-def api_stats(db: Session = Depends(get_db)):
-    all_listings = db.query(Listing).all()
-    published    = [l for l in all_listings if l.published]
-    total_rev    = sum(l.listing_price or 0 for l in published)
-    total_cost   = sum(l.raw_price or 0 for l in published)
-    profit       = total_rev - total_cost
-    margin       = round((profit / total_rev * 100), 1) if total_rev else 0
-    recent       = db.query(Listing).order_by(Listing.created_at.desc()).limit(5).all()
-    return {
-        "total_generated": len(all_listings),
-        "total_published": len(published),
-        "estimated_profit": round(profit, 2),
-        "avg_margin_pct": margin,
-        "recent": [l.to_dict() for l in recent],
-        "demo_mode": DEMO_MODE,
-    }
-
-
-# ── eBay OAuth ────────────────────────────────────────────────────────────────
-
 @app.get("/api/ebay/auth-url")
-def api_ebay_auth_url():
-    return {"url": ebay_api.get_auth_url(), "demo_mode": DEMO_MODE}
+def auth_url():
+    return {"success": True, "url": ebay_api.get_auth_url()}
 
 
 @app.get("/ebay/callback")
-def ebay_callback(code: str, demo: Optional[str] = None, db: Session = Depends(get_db)):
-    try:
-        tokens = ebay_api.exchange_code_for_token(code)
-        _oauth_tokens["default"] = tokens
-        return RedirectResponse(url="/?ebay_connected=1")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"OAuth failed: {e}")
+def ebay_callback(code: str = ""):
+    ebay_api.exchange_code_for_token(code)
+    return RedirectResponse(url="/dashboard", status_code=302)
 
 
-@app.get("/api/ebay/status")
-def api_ebay_status():
-    connected = "default" in _oauth_tokens
-    token_data = _oauth_tokens.get("default", {})
-    return {
-        "connected": connected,
-        "demo": token_data.get("demo", False),
-        "demo_mode": DEMO_MODE,
-    }
+@app.post("/api/scanner/run")
+def run_scanner(db: Session = Depends(get_db)):
+    results = scan_all_targets(db)
+    return {"success": True, "count": len(results)}
 
 
-# ── eBay Publish ──────────────────────────────────────────────────────────────
+@app.get("/api/scanner/top")
+def scanner_top(db: Session = Depends(get_db)):
+    rows = db.query(ScannerResult).order_by(ScannerResult.profit_margin_pct.desc()).limit(5).all()
+    return {"success": True, "results": [{"id": r.id, "product_name": r.product_name, "profit_margin_pct": r.profit_margin_pct, "retail_url": r.retail_url} for r in rows]}
 
-@app.post("/api/listings/{listing_id}/publish")
-def api_publish_listing(listing_id: int, db: Session = Depends(get_db)):
-    listing = db.query(Listing).filter(Listing.id == listing_id).first()
-    if not listing:
-        raise HTTPException(status_code=404, detail="Listing not found")
 
-    tokens = _oauth_tokens.get("default")
-    if not tokens and not DEMO_MODE:
-        raise HTTPException(
-            status_code=401,
-            detail="Not authenticated with eBay. Connect your account first.",
-        )
-
-    # Use demo token if in demo mode
-    access_token = (tokens or {}).get("access_token", "DEMO_ACCESS_TOKEN")
-
-    # Upload images
-    ebay_image_urls = []
-    for local_path in listing.local_images_list()[:12]:
-        full_path = BASE_DIR / local_path
-        img_url = ebay_api.upload_image(access_token, str(full_path))
-        if img_url:
-            ebay_image_urls.append(img_url)
-
-    # Create inventory item
-    inv_result = ebay_api.create_inventory_item(access_token, listing.to_dict(), ebay_image_urls)
-    if inv_result["status"] not in (200, 201, 204):
-        raise HTTPException(status_code=500, detail=f"Inventory creation failed: {inv_result['body']}")
-
-    sku = inv_result["sku"]
-
-    # Create offer
-    offer_result = ebay_api.create_offer(access_token, listing.to_dict(), sku)
-    if offer_result["status"] not in (200, 201):
-        raise HTTPException(status_code=500, detail=f"Offer creation failed: {offer_result['body']}")
-
-    offer_id = offer_result["offer_id"]
-
-    # Publish offer
-    publish_result = ebay_api.publish_offer(access_token, offer_id)
-
-    listing.published = True
-    listing.published_at = datetime.utcnow()
-    listing.status = "published"
-    listing.ebay_listing_id = publish_result.get("listing_id")
-    listing.ebay_draft_id = offer_id
+@app.get("/api/listings/{listing_id}/export/{fmt}")
+def export_listing(listing_id: int, fmt: str, db: Session = Depends(get_db)):
+    l = db.query(Listing).filter(Listing.id == listing_id).first()
+    if not l:
+        raise HTTPException(404, "Listing not found")
+    l.export_count = (l.export_count or 0) + 1
     db.commit()
-    db.refresh(listing)
+    if fmt == "amazon": return Response(export_amazon(l), media_type="text/csv")
+    if fmt == "etsy": return Response(export_etsy(l), media_type="text/csv")
+    if fmt == "facebook": return Response(export_facebook(l), media_type="application/json")
+    if fmt == "csv": return Response(export_generic_csv(l), media_type="text/csv")
+    raise HTTPException(400, "Unsupported format")
 
-    return {
-        "success": True,
-        "listing": listing.to_dict(),
-        "ebay_id": listing.ebay_listing_id,
-        "demo": DEMO_MODE,
-        "message": "Listing simulated (demo mode)" if DEMO_MODE else "Listing published to eBay",
-    }
+
+@app.get("/api/listings/export/bulk")
+def export_bulk(ids: str, db: Session = Depends(get_db)):
+    id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    rows = db.query(Listing).filter(Listing.id.in_(id_list)).all()
+    return Response(export_bulk_zip(rows), media_type="application/zip")
+
+
+@app.websocket("/ws/bulk-progress")
+async def bulk_progress_ws(websocket: WebSocket):
+    await websocket.accept()
+    data = await websocket.receive_json()
+    urls = data.get("urls", [])
+    markup = float(data.get("markup", DEFAULT_MARKUP))
+    await websocket.send_json({"type": "start", "total": len(urls), "url": ""})
+    success = 0
+    for i, url in enumerate(urls, start=1):
+        await websocket.send_json({"type": "progress", "current": i, "total": len(urls), "url": url, "status": "scraping"})
+        p = scrape_product_sync(url)
+        if p.error:
+            await websocket.send_json({"type": "error", "url": url, "error_type": p.error.error_type, "message": p.error.message})
+            continue
+        await websocket.send_json({"type": "progress", "current": i, "total": len(urls), "url": url, "status": "done"})
+        success += 1
+        await websocket.send_json({"type": "listing_ready", "listing": {"title": p.title, "source_url": url, "est_price": calculate_price(p.price or 0, p.title, markup)["listing_price"]}})
+    await websocket.send_json({"type": "complete", "succeeded": success, "failed": len(urls)-success})
