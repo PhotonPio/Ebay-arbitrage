@@ -28,7 +28,13 @@
 ebay-arbitrage-tool/
 ├── backend/
 │   ├── main.py              ← FastAPI app, all API routes
-│   ├── scraper.py           ← Playwright product scraper
+│   ├── scraper.py           ← Orchestrates scraping + normalization
+│   ├── cli.py               ← Interactive product URL CLI
+│   ├── scrapers/            ← Modular parsers and scraper base classes
+│   │   ├── product_parser.py
+│   │   ├── image_parser.py
+│   │   ├── variant_parser.py
+│   │   └── base.py
 │   ├── ebay_api.py          ← eBay OAuth + Inventory API
 │   ├── pricing_engine.py    ← Price calc + eBay Browse API
 │   ├── listing_generator.py ← Claude AI listing writer + quality score
